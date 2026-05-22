@@ -42,6 +42,11 @@ app.include_router(analytics.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.get("/api/whatsapp/status")
 async def whatsapp_status():
     return await whatsapp_bridge.get_connection_status()
