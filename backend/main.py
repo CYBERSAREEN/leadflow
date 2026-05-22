@@ -3,7 +3,6 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,13 +12,29 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from backend import database
-    from backend.services.scheduler import start_scheduler, stop_scheduler
-    database.init_db()
-    start_scheduler()
+    try:
+        from backend import database
+        database.init_db()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.error(f"Database init failed: {e}")
+
+    try:
+        from backend.services.scheduler import start_scheduler
+        start_scheduler()
+        logger.info("Scheduler started")
+    except Exception as e:
+        logger.error(f"Scheduler start failed (non-fatal): {e}")
+
     logger.info("LeadFlow AI started")
     yield
-    stop_scheduler()
+
+    try:
+        from backend.services.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception as e:
+        logger.error(f"Scheduler stop error: {e}")
+
     logger.info("LeadFlow AI stopped")
 
 
@@ -33,6 +48,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 from backend.routes import leads, messages, analytics, ai
 from backend.services import whatsapp_bridge
 
@@ -40,11 +61,6 @@ app.include_router(leads.router, prefix="/api")
 app.include_router(messages.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
 
 
 @app.get("/api/whatsapp/status")
@@ -73,12 +89,6 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         active_connections.discard(websocket)
-        logger.info(f"WebSocket disconnected — {len(active_connections)} clients")
     except Exception as e:
         active_connections.discard(websocket)
         logger.error(f"WebSocket error: {e}")
-
-
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.isdir(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
