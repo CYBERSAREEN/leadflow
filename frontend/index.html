@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeadFlow AI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #FFFFFF;
+      --card:        #FFFFFF;
+      --card-alt:    #F4F7FA;
+      --sidebar-bg:  #2C3947;
+      --sidebar-txt: #E8EDF2;
+      --sidebar-mut: #7fa3b8;
+      --accent:      #547A95;
+      --highlight:   #C2A56D;
+      --success:     #2d7a4f;
+      --warning:     #b8822a;
+      --danger:      #c62828;
+      --text:        #2C3947;
+      --text-muted:  #547A95;
+      --border:      #E8EDF2;
+      --topbar-bg:   #FFFFFF;
+      --shadow:      0 1px 4px rgba(44,57,71,0.10);
+      --shadow-md:   0 4px 20px rgba(44,57,71,0.12);
+      --sidebar-w:   240px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ===== SIDEBAR ===== */
+    #sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--sidebar-bg);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      transition: width 0.2s, min-width 0.2s;
+      overflow: hidden;
+    }
+    #sidebar.collapsed { width: 60px; min-width: 60px; }
+
+    .sidebar-logo {
+      padding: 20px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      cursor: pointer;
+      user-select: none;
+    }
+    .sidebar-logo .logo-icon {
+      width: 34px; height: 34px; min-width: 34px;
+      background: var(--highlight);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; color: #fff;
+      letter-spacing: -1px;
+    }
+    .sidebar-logo .logo-text {
+      font-size: 15px; font-weight: 700;
+      color: var(--sidebar-txt);
+      white-space: nowrap; overflow: hidden;
+    }
+    #sidebar.collapsed .logo-text { display: none; }
+
+    nav { flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: 8px;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      font-size: 14px; font-weight: 500; white-space: nowrap;
+      color: var(--sidebar-mut);
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.07); color: var(--sidebar-txt); }
+    .nav-item.active { background: rgba(194,165,109,0.15); color: var(--highlight); }
+    .nav-item .nav-icon { font-size: 17px; min-width: 20px; text-align: center; }
+    .nav-item .nav-label { overflow: hidden; }
+    #sidebar.collapsed .nav-label { display: none; }
+
+    .sidebar-footer {
+      padding: 14px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .wa-status {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--sidebar-mut);
+    }
+    .wa-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--danger); flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .wa-dot.connected { background: #4ade80; }
+    .wa-label { white-space: nowrap; overflow: hidden; flex: 1; }
+    #sidebar.collapsed .wa-label { display: none; }
+    .wa-connect-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 8px; padding: 6px 10px;
+      background: rgba(194,165,109,0.18); color: var(--highlight);
+      border: 1px solid rgba(194,165,109,0.3);
+      border-radius: 6px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+      width: 100%;
+      justify-content: center;
+    }
+    .wa-connect-btn:hover { background: rgba(194,165,109,0.28); }
+    #sidebar.collapsed .wa-connect-btn { display: none; }
+
+    /* ===== MAIN ===== */
+    #main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg); }
+
+    .topbar {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--topbar-bg);
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: var(--shadow);
+    }
+    .topbar-title { font-size: 19px; font-weight: 700; color: var(--text); }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    /* ===== PAGES ===== */
+    .page { display: none; padding: 24px; flex: 1; }
+    .page.active { display: block; }
+
+    /* ===== CARDS ===== */
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+      border: 1px solid var(--border);
+    }
+    .card-title {
+      font-size: 12px; font-weight: 700;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 14px;
+    }
+
+    /* ===== STAT CARDS ===== */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 20px 20px 18px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 4px; height: 100%;
+      border-radius: 12px 0 0 12px;
+    }
+    .stat-card.c-accent::before { background: var(--accent); }
+    .stat-card.c-highlight::before { background: var(--highlight); }
+    .stat-card.c-success::before { background: var(--success); }
+    .stat-card.c-info::before { background: #4a90b8; }
+    .stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .stat-value { font-size: 34px; font-weight: 700; color: var(--text); line-height: 1; }
+    .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    .stat-card.c-accent .stat-value { color: var(--accent); }
+    .stat-card.c-highlight .stat-value { color: var(--highlight); }
+    .stat-card.c-success .stat-value { color: var(--success); }
+    .stat-card.c-info .stat-value { color: #4a90b8; }
+
+    /* ===== CHARTS GRID ===== */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .chart-container { position: relative; height: 260px; }
+
+    /* ===== DASHBOARD ROW ===== */
+    .dash-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    /* ===== AUTOMATED LEADS FEED ===== */
+    .auto-leads-feed { display: flex; flex-direction: column; gap: 10px; }
+    .auto-lead-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px;
+      background: var(--card-alt);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .auto-lead-item:hover { border-color: var(--accent); }
+    .auto-lead-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 14px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .auto-lead-info { flex: 1; min-width: 0; }
+    .auto-lead-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .auto-lead-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .auto-lead-badge { flex-shrink: 0; }
+
+    /* ===== TABLES ===== */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    thead th {
+      text-align: left; padding: 10px 14px;
+      color: var(--text-muted); font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      background: var(--card-alt);
+      border-bottom: 1px solid var(--border);
+    }
+    thead th:first-child { border-radius: 8px 0 0 0; }
+    thead th:last-child { border-radius: 0 8px 0 0; }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+      cursor: pointer;
+    }
+    tbody tr:hover { background: #f0f5f9; }
+    td { padding: 11px 14px; vertical-align: middle; }
+
+    /* ===== BADGES ===== */
+    .badge {
+      display: inline-block; padding: 3px 9px;
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+      text-transform: capitalize; letter-spacing: 0.02em;
+    }
+    .badge-new { background: rgba(84,122,149,0.12); color: var(--accent); }
+    .badge-contacted { background: rgba(194,165,109,0.15); color: var(--warning); }
+    .badge-interested { background: rgba(74,144,184,0.15); color: #4a90b8; }
+    .badge-converted { background: rgba(45,122,79,0.15); color: var(--success); }
+    .badge-lost { background: rgba(198,40,40,0.12); color: var(--danger); }
+    .badge-whatsapp { background: rgba(37,211,102,0.12); color: #1a9944; }
+    .badge-manual { background: rgba(84,122,149,0.1); color: var(--text-muted); }
+    .badge-facebook { background: rgba(59,130,246,0.12); color: #2563eb; }
+
+    /* ===== SCORE BAR ===== */
+    .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .score-bar {
+      flex: 1; height: 6px; border-radius: 3px;
+      background: var(--border); overflow: hidden;
+    }
+    .score-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+    .score-fill.low { background: var(--danger); }
+    .score-fill.mid { background: var(--warning); }
+    .score-fill.high { background: var(--success); }
+    .score-num { font-size: 12px; font-weight: 600; min-width: 28px; color: var(--text-muted); }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      border: none; transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+      font-family: 'Inter', sans-serif;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(84,122,149,0.3); }
+    .btn-highlight { background: var(--highlight); color: #fff; box-shadow: 0 2px 8px rgba(194,165,109,0.3); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-ghost { background: var(--card-alt); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--border); opacity: 1; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ===== FILTERS ===== */
+    .filter-bar {
+      display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+    }
+    select, input[type="text"], input[type="date"], textarea {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    select:focus, input:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(84,122,149,0.12);
+    }
+    select { cursor: pointer; }
+    textarea { resize: vertical; width: 100%; }
+
+    /* ===== MODAL ===== */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(44,57,71,0.55); z-index: 100;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 28px;
+      width: 480px; max-width: 95vw;
+      box-shadow: var(--shadow-md);
+    }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: var(--text); }
+    .modal-close {
+      background: var(--card-alt); border: 1px solid var(--border); color: var(--text-muted);
+      font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    }
+    .modal-close:hover { color: var(--text); background: var(--border); }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .form-control { width: 100%; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    /* ===== QR MODAL ===== */
+    #qr-modal .modal { width: 360px; text-align: center; }
+    #qr-canvas-wrap {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 260px; margin: 16px 0;
+    }
+    #qr-canvas-wrap canvas, #qr-canvas-wrap img { border-radius: 8px; border: 3px solid var(--border); }
+    .qr-status-text { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .qr-refresh-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; opacity: 0.7; }
+    .qr-countdown-bar {
+      width: 100%; height: 4px; background: var(--border); border-radius: 2px;
+      margin-top: 10px; overflow: hidden;
+    }
+    .qr-countdown-fill {
+      height: 100%; background: var(--accent); border-radius: 2px;
+      transition: width 1s linear; width: 100%;
+    }
+    .qr-connected-screen {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 32px 20px; gap: 10px;
+    }
+    .qr-connected-icon { font-size: 52px; }
+    .qr-connected-label { font-size: 17px; font-weight: 700; color: var(--success); }
+    .qr-connected-sub { font-size: 12px; color: var(--text-muted); }
+
+    /* ===== SLIDE PANEL ===== */
+    #lead-panel {
+      position: fixed; top: 0; right: -520px; width: 500px;
+      height: 100vh; background: var(--card);
+      border-left: 1px solid var(--border);
+      z-index: 50; transition: right 0.3s;
+      display: flex; flex-direction: column;
+      box-shadow: -8px 0 40px rgba(44,57,71,0.15);
+    }
+    #lead-panel.open { right: 0; }
+    .panel-header {
+      padding: 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      flex-shrink: 0; background: var(--card-alt);
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: var(--bg); }
+    .panel-close {
+      background: var(--card); border: 1px solid var(--border); color: var(--text-muted);
+      font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    }
+    .panel-close:hover { color: var(--text); }
+
+    /* ===== CHAT BUBBLES ===== */
+    .chat-history { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; padding: 4px; }
+    .bubble-wrap { display: flex; }
+    .bubble-wrap.inbound { justify-content: flex-start; }
+    .bubble-wrap.outbound { justify-content: flex-end; }
+    .bubble {
+      max-width: 75%; padding: 8px 12px; border-radius: 12px;
+      font-size: 13px; line-height: 1.5;
+    }
+    .bubble-wrap.inbound .bubble { background: var(--card-alt); border: 1px solid var(--border); border-bottom-left-radius: 4px; color: var(--text); }
+    .bubble-wrap.outbound .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .bubble-time { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+    .bubble-wrap.inbound .bubble-time { text-align: left; }
+    .bubble-wrap.outbound .bubble-time { text-align: right; }
+
+    /* ===== MESSAGES TIMELINE ===== */
+    .msg-timeline { display: flex; flex-direction: column; gap: 10px; }
+    .msg-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 14px; background: var(--card-alt);
+      border-radius: 8px; border: 1px solid var(--border);
+    }
+    .msg-dir { font-size: 16px; flex-shrink: 0; width: 26px; text-align: center; }
+    .msg-content { flex: 1; }
+    .msg-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+    .msg-body { font-size: 13px; color: var(--text); }
+
+    /* ===== PROGRESS ===== */
+    .progress-bar-wrap { background: var(--border); border-radius: 4px; height: 8px; }
+    .progress-fill {
+      height: 100%; border-radius: 4px; background: var(--accent);
+      transition: width 0.5s; width: 0%;
+    }
+
+    /* ===== TOAST ===== */
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 8px; z-index: 200;
+    }
+    .toast {
+      padding: 12px 18px; border-radius: 10px;
+      font-size: 13px; font-weight: 500;
+      box-shadow: var(--shadow-md);
+      animation: toastIn 0.3s ease;
+      min-width: 240px; max-width: 340px;
+    }
+    .toast-success { background: #f0faf4; border: 1px solid #a3d9b5; color: #1a6b3a; }
+    .toast-error   { background: #fff5f5; border: 1px solid #f5b7b7; color: #9b1c1c; }
+    .toast-info    { background: #f0f6fb; border: 1px solid #a8c8e0; color: #2c5f7a; }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ===== SPINNER ===== */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-center { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 12px; color: var(--text-muted); }
+
+    /* ===== REPORTS ===== */
+    .report-cards { display: flex; flex-direction: column; gap: 14px; }
+    .report-card {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px;
+    }
+    .report-date { font-weight: 700; margin-bottom: 8px; color: var(--accent); font-size: 14px; }
+    .report-stats { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; margin-bottom: 10px; }
+    .report-stat-item { color: var(--text-muted); }
+    .report-stat-item strong { color: var(--text); }
+    .report-insights { font-size: 13px; line-height: 1.7; white-space: pre-wrap; color: var(--text-muted); }
+
+    /* ===== INSIGHT CARD ===== */
+    .insight-text {
+      font-size: 14px; line-height: 1.8; white-space: pre-wrap;
+      color: var(--text); padding: 18px;
+      background: var(--card-alt);
+      border-radius: 8px; border-left: 3px solid var(--accent);
+    }
+
+    /* ===== PIPELINE MINI BARS ===== */
+    .pipeline-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+    .pipeline-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+    .pipeline-label { width: 84px; color: var(--text-muted); font-weight: 500; text-transform: capitalize; }
+    .pipeline-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .pipeline-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+    .pipeline-count { width: 28px; text-align: right; font-weight: 600; color: var(--text); }
+
+    /* ===== SECTION HEADER ===== */
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    /* ===== PANEL BACKDROP ===== */
+    #panel-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(44,57,71,0.4); z-index: 49;
+      backdrop-filter: blur(1px);
+    }
+    #panel-backdrop.open { display: block; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1200px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .dash-row { grid-template-columns: 1fr; }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      #sidebar { width: 60px; min-width: 60px; }
+      #sidebar .logo-text, #sidebar .nav-label, #sidebar .wa-label,
+      #sidebar .wa-connect-btn { display: none; }
+    }
+    @media (max-width: 640px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      #lead-panel { width: 100%; right: -100%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="sidebar-logo" onclick="toggleSidebar()">
+    <div class="logo-icon">LF</div>
+    <span class="logo-text">LeadFlow AI</span>
+  </div>
+  <nav>
+    <div class="nav-item active" data-page="dashboard">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">Dashboard</span>
+    </div>
+    <div class="nav-item" data-page="leads">
+      <span class="nav-icon">👥</span>
+      <span class="nav-label">Leads</span>
+    </div>
+    <div class="nav-item" data-page="messages">
+      <span class="nav-icon">💬</span>
+      <span class="nav-label">Messages</span>
+    </div>
+    <div class="nav-item" data-page="ai-insights">
+      <span class="nav-icon">🤖</span>
+      <span class="nav-label">AI Insights</span>
+    </div>
+    <div class="nav-item" data-page="reports">
+      <span class="nav-icon">📋</span>
+      <span class="nav-label">Reports</span>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="wa-status">
+      <div class="wa-dot" id="wa-dot"></div>
+      <span class="wa-label" id="wa-label">Disconnected</span>
+    </div>
+    <button class="wa-connect-btn" id="wa-connect-btn">
+      📱 Connect WhatsApp
+    </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </div>
+
+  <!-- DASHBOARD PAGE -->
+  <div class="page active" id="page-dashboard">
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card c-accent">
+        <div class="stat-label">Total Leads</div>
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-sub">All time</div>
+      </div>
+      <div class="stat-card c-info">
+        <div class="stat-label">New Today</div>
+        <div class="stat-value" id="stat-new">—</div>
+        <div class="stat-sub">Captured today</div>
+      </div>
+      <div class="stat-card c-success">
+        <div class="stat-label">Converted</div>
+        <div class="stat-value" id="stat-conv">—</div>
+        <div class="stat-sub" id="stat-rate">—</div>
+      </div>
+      <div class="stat-card c-highlight">
+        <div class="stat-label">Messages Today</div>
+        <div class="stat-value" id="stat-msgs">—</div>
+        <div class="stat-sub">Sent &amp; received</div>
+      </div>
+    </div>
+
+    <div class="dash-row">
+      <!-- Leads over time chart -->
+      <div class="card">
+        <div class="card-title">Leads Over Time (30 days)</div>
+        <div class="chart-container"><canvas id="chart-line"></canvas></div>
+      </div>
+      <!-- Automated leads feed -->
+      <div class="card">
+        <div class="section-header">
+          <span class="card-title" style="margin-bottom:0;">Automated Leads</span>
+          <span style="font-size:11px; color:var(--text-muted);">WhatsApp · Auto-captured</span>
+        </div>
+        <div id="auto-leads-feed">
+          <div class="loading-center" style="padding:24px;"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-row">
+      <!-- Pipeline overview -->
+      <div class="card">
+        <div class="card-title">Pipeline Overview</div>
+        <div id="pipeline-bars"><div class="loading-center" style="padding:20px;"><div class="spinner"></div></div></div>
+      </div>
+      <!-- Doughnut chart -->
+      <div class="card">
+        <div class="card-title">Conversion Funnel</div>
+        <div class="chart-container"><canvas id="chart-doughnut"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-header">
+        <span class="card-title" style="margin-bottom:0;">Leads Needing Follow-up</span>
+      </div>
+      <div id="followup-table-wrap"><div class="loading-center"><div class="spinner"></div> Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- LEADS PAGE -->
+  <div class="page" id="page-leads">
+    <div class="filter-bar">
+      <select id="leads-status-filter" onchange="loadLeads()">
+        <option value="">All Statuses</option>
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+        <option value="interested">Interested</option>
+        <option value="converted">Converted</option>
+        <option value="lost">Lost</option>
+      </select>
+      <input type="text" id="leads-search" placeholder="Search name or phone..." oninput="debounceSearch()" style="flex:1; min-width:180px;" />
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div id="leads-table-wrap"><div class="loading-center"><div class="spinner"></div> Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- MESSAGES PAGE -->
+  <div class="page" id="page-messages">
+    <div class="card">
+      <div class="card-title">Recent Messages (Live)</div>
+      <div id="messages-list"><div class="loading-center"><div class="spinner"></div> Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- AI INSIGHTS PAGE -->
+  <div class="page" id="page-ai-insights">
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
+      <button class="btn btn-primary" onclick="generateInsights()" id="btn-insights">
+        🤖 Generate Today's Insights
+      </button>
+      <button class="btn btn-ghost" onclick="scoreAllLeads()" id="btn-score-all">
+        ⚡ Score All Leads
+      </button>
+    </div>
+    <div id="insights-card" class="card" style="margin-bottom:20px; display:none;">
+      <div class="card-title">AI Daily Insights</div>
+      <div class="insight-text" id="insights-text"></div>
+    </div>
+    <div id="score-all-card" class="card" style="margin-bottom:20px; display:none;">
+      <div class="card-title">Scoring Progress</div>
+      <div style="margin-bottom:8px; font-size:13px; color:var(--text-muted);" id="score-all-status">Starting...</div>
+      <div class="progress-bar-wrap"><div class="progress-fill" id="score-progress-fill"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Top 5 Scored Leads</div>
+      <div id="top-leads-wrap"><div class="loading-center"><div class="spinner"></div> Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- REPORTS PAGE -->
+  <div class="page" id="page-reports">
+    <div style="margin-bottom:16px; display:flex; justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="downloadCSV()">⬇ Download Leads CSV</button>
+    </div>
+    <div id="reports-wrap"><div class="loading-center"><div class="spinner"></div> Loading...</div></div>
+  </div>
+</div>
+
+<!-- LEAD DETAIL PANEL -->
+<div id="panel-backdrop" onclick="closeLeadPanel()"></div>
+<div id="lead-panel">
+  <div class="panel-header">
+    <div>
+      <div style="font-size:18px; font-weight:700; color:var(--text);" id="panel-lead-name">—</div>
+      <div style="font-size:13px; color:var(--text-muted); margin-top:4px;" id="panel-lead-phone">—</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn btn-danger btn-sm" onclick="deleteLead()" id="btn-delete-lead" title="Delete lead">🗑 Delete</button>
+      <button class="panel-close" onclick="closeLeadPanel()">✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Lead Info</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
+        <div><span style="color:var(--text-muted); font-size:11px; text-transform:uppercase; font-weight:700;">Source</span><br><span id="panel-source">—</span></div>
+        <div><span style="color:var(--text-muted); font-size:11px; text-transform:uppercase; font-weight:700;">AI Score</span><br><span id="panel-score">—</span></div>
+        <div><span style="color:var(--text-muted); font-size:11px; text-transform:uppercase; font-weight:700;">Created</span><br><span id="panel-created">—</span></div>
+        <div><span style="color:var(--text-muted); font-size:11px; text-transform:uppercase; font-weight:700;">Last Contacted</span><br><span id="panel-last">—</span></div>
+      </div>
+      <div style="margin-top:12px; font-size:12px; color:var(--text-muted); font-style:italic; line-height:1.6;" id="panel-ai-summary"></div>
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Update Lead</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div style="flex:1; min-width:140px;">
+          <div class="form-label">Status</div>
+          <select id="panel-status-sel" class="form-control">
+            <option value="new">New</option>
+            <option value="contacted">Contacted</option>
+            <option value="interested">Interested</option>
+            <option value="converted">Converted</option>
+            <option value="lost">Lost</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:140px;">
+          <div class="form-label">Follow-up Date</div>
+          <input type="date" id="panel-followup" class="form-control" />
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="updateLeadFromPanel()">Save</button>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="form-label">Notes</div>
+        <textarea id="panel-notes" rows="2" style="font-size:12px;"></textarea>
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Conversation</div>
+      <div class="chat-history" id="panel-chat"></div>
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <div class="card-title">Send Message</div>
+      <div id="reply-suggestion-wrap" style="display:none; margin-bottom:10px; padding:10px; background:var(--card-alt); border-radius:8px; border:1px solid var(--border);">
+        <div style="font-size:11px; color:var(--accent); font-weight:700; margin-bottom:4px;">AI Suggestion</div>
+        <div style="font-size:12px; color:var(--text); font-style:italic; margin-bottom:8px; line-height:1.5;" id="reply-suggestion-text"></div>
+        <button class="btn btn-sm btn-ghost" onclick="useSuggestion()">Use This</button>
+      </div>
+      <textarea id="panel-message" rows="3" placeholder="Type a message..."></textarea>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="suggestReply()" id="btn-suggest">✨ Suggest Reply</button>
+        <button class="btn btn-primary btn-sm" onclick="sendPanelMessage()" id="btn-send-msg">Send via WhatsApp</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD LEAD MODAL -->
+<div class="modal-overlay" id="add-lead-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add New Lead</div>
+      <button class="modal-close" onclick="closeAddLeadModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="new-lead-name" class="form-control" placeholder="Full name" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Phone *</label>
+      <input type="text" id="new-lead-phone" class="form-control" placeholder="e.g. 917087603933" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Source</label>
+      <select id="new-lead-source" class="form-control">
+        <option value="manual">Manual</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="facebook">Facebook</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeAddLeadModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddLead()">Add Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR CODE MODAL -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal" style="width:360px; text-align:center;">
+    <div class="modal-header">
+      <div class="modal-title">Connect WhatsApp</div>
+      <button class="modal-close" onclick="closeQRModal()">✕</button>
+    </div>
+    <p id="qr-instructions" style="font-size:13px; color:var(--text-muted); margin-bottom:4px;">
+      Open WhatsApp on your phone → Linked Devices → Link a Device
+    </p>
+    <div id="qr-canvas-wrap"></div>
+    <p class="qr-status-text" id="qr-status-text">Loading QR code...</p>
+    <div class="qr-countdown-bar" id="qr-countdown-bar" style="display:none;">
+      <div class="qr-countdown-fill" id="qr-countdown-fill"></div>
+    </div>
+    <div id="qr-actions" style="margin-top:16px;">
+      <button class="btn btn-ghost btn-sm" onclick="refreshQRManual()" style="width:100%;">🔄 Refresh QR</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<script>
+const API = window.LEADFLOW_API || '';
+let currentPage = 'dashboard';
+let currentLeadId = null;
+let lineChart = null;
+let doughnutChart = null;
+let dashboardInterval = null;
+let wsConn = null;
+let searchTimeout = null;
+let qrPollInterval = null;
+let qrInstance = null;
+let lastQRData = null;
+let qrCountdownInterval = null;
+
+// ===== NAVIGATION =====
+function navigate(page) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`[data-page="${page}"]`).classList.add('active');
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  currentPage = page;
+
+  const titles = {
+    'dashboard': 'Dashboard',
+    'leads': 'Leads',
+    'messages': 'Messages',
+    'ai-insights': 'AI Insights',
+    'reports': 'Reports',
+  };
+  document.getElementById('page-title').textContent = titles[page] || page;
+
+  const actions = document.getElementById('topbar-actions');
+  actions.innerHTML = '';
+  if (page === 'leads') {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.innerHTML = '+ Add Lead';
+    btn.onclick = openAddLeadModal;
+    actions.appendChild(btn);
+  }
+
+  if (dashboardInterval) clearInterval(dashboardInterval);
+
+  if (page === 'dashboard') {
+    loadDashboard();
+    dashboardInterval = setInterval(loadDashboard, 60000);
+  } else if (page === 'leads') {
+    loadLeads();
+  } else if (page === 'messages') {
+    loadMessages();
+  } else if (page === 'ai-insights') {
+    loadTopLeads();
+  } else if (page === 'reports') {
+    loadReports();
+  }
+}
+
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => navigate(el.dataset.page));
+});
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ===== WEBSOCKET =====
+function connectWebSocket() {
+  if (wsConn && wsConn.readyState === WebSocket.OPEN) return;
+  try {
+    wsConn = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    wsConn.onopen = () => console.log('WebSocket connected');
+    wsConn.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data.type === 'new_message') handleNewMessage(data);
+      } catch(e) {}
+    };
+    wsConn.onclose = () => setTimeout(connectWebSocket, 5000);
+    wsConn.onerror = () => wsConn.close();
+  } catch(e) {
+    setTimeout(connectWebSocket, 5000);
+  }
+}
+
+function handleNewMessage(data) {
+  if (currentPage === 'messages') prependMessage(data.message, data.lead_name);
+  if (currentPage === 'dashboard') {
+    loadStats();
+    loadAutoLeads();
+  }
+  toast(`New message from ${data.lead_name || data.message.phone}`, 'info');
+}
+
+function prependMessage(msg, leadName) {
+  const list = document.getElementById('messages-list');
+  const item = renderMessageItem(msg, leadName);
+  if (list.firstChild && !list.querySelector('.loading-center')) {
+    list.insertBefore(item, list.firstChild);
+  }
+}
+
+// ===== WHATSAPP STATUS =====
+async function pollWAStatus() {
+  try {
+    const r = await fetch(`${API}/api/whatsapp/status`);
+    const d = await r.json();
+    const dot = document.getElementById('wa-dot');
+    const label = document.getElementById('wa-label');
+    const btn = document.getElementById('wa-connect-btn');
+    if (d.connected) {
+      dot.classList.add('connected');
+      label.textContent = d.phone ? `+${d.phone}` : 'Connected';
+      btn.innerHTML = '✓ Connected · Disconnect';
+      btn.style.color = 'var(--success)';
+      btn.style.borderColor = 'rgba(45,122,79,0.3)';
+      btn.style.background = 'rgba(45,122,79,0.1)';
+      btn.onclick = disconnectWhatsApp;
+    } else {
+      dot.classList.remove('connected');
+      label.textContent = 'Disconnected';
+      btn.innerHTML = '📱 Connect WhatsApp';
+      btn.style.color = '';
+      btn.style.borderColor = '';
+      btn.style.background = '';
+      btn.onclick = openQRModal;
+    }
+  } catch(e) {
+    document.getElementById('wa-dot').classList.remove('connected');
+    document.getElementById('wa-label').textContent = 'Offline';
+  }
+}
+
+async function disconnectWhatsApp() {
+  if (!confirm('Disconnect WhatsApp? You will need to scan the QR code again to reconnect.')) return;
+  try {
+    const r = await fetch(`${API}/api/whatsapp/disconnect`, { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      toast('WhatsApp disconnected', 'info');
+      pollWAStatus();
+    } else {
+      toast(`Disconnect failed: ${d.error || 'unknown error'}`, 'error');
+    }
+  } catch(e) {
+    toast('Failed to disconnect', 'error');
+  }
+}
+
+// ===== QR CODE =====
+function openQRModal() {
+  lastQRData = null;
+  document.getElementById('qr-canvas-wrap').innerHTML = '<div class="loading-center" style="padding:40px;"><div class="spinner"></div></div>';
+  document.getElementById('qr-status-text').textContent = 'Loading QR code...';
+  document.getElementById('qr-countdown-bar').style.display = 'none';
+  document.getElementById('qr-instructions').style.display = '';
+  document.getElementById('qr-actions').style.display = '';
+  document.getElementById('qr-modal').classList.add('open');
+  fetchQR();
+  if (qrPollInterval) clearInterval(qrPollInterval);
+  qrPollInterval = setInterval(fetchQR, 3000);
+}
+
+function closeQRModal() {
+  document.getElementById('qr-modal').classList.remove('open');
+  if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
+  if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
+}
+
+function startQRCountdown(seconds) {
+  if (qrCountdownInterval) clearInterval(qrCountdownInterval);
+  const bar = document.getElementById('qr-countdown-fill');
+  const countdownBar = document.getElementById('qr-countdown-bar');
+  countdownBar.style.display = 'block';
+  let remaining = seconds;
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  setTimeout(() => {
+    bar.style.transition = `width ${seconds}s linear`;
+    bar.style.width = '0%';
+  }, 50);
+  qrCountdownInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(qrCountdownInterval);
+      qrCountdownInterval = null;
+    }
+  }, 1000);
+}
+
+function refreshQRManual() {
+  lastQRData = null;
+  fetchQR();
+}
+
+async function fetchQR() {
+  const wrap = document.getElementById('qr-canvas-wrap');
+  const statusEl = document.getElementById('qr-status-text');
+  try {
+    const r = await fetch(`${API}/api/whatsapp/qr`);
+    const d = await r.json();
+    if (d.connected) {
+      if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
+      if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
+      document.getElementById('qr-instructions').style.display = 'none';
+      document.getElementById('qr-actions').style.display = 'none';
+      document.getElementById('qr-countdown-bar').style.display = 'none';
+      wrap.innerHTML = `<div class="qr-connected-screen">
+        <div class="qr-connected-icon">✅</div>
+        <div class="qr-connected-label">Connected!</div>
+        <div class="qr-connected-sub">WhatsApp linked successfully</div>
+      </div>`;
+      statusEl.textContent = '';
+      setTimeout(() => {
+        closeQRModal();
+        pollWAStatus();
+        toast('WhatsApp connected!', 'success');
+      }, 1800);
+    } else if (d.qr) {
+      if (d.qr !== lastQRData) {
+        lastQRData = d.qr;
+        wrap.innerHTML = '';
+        qrInstance = new QRCode(wrap, {
+          text: d.qr,
+          width: 240, height: 240,
+          colorDark: '#2C3947', colorLight: '#FFFFFF',
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+        startQRCountdown(30);
+      }
+      statusEl.textContent = 'Scan with your WhatsApp app';
+    } else {
+      if (!lastQRData) {
+        wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;"><div class="spinner" style="margin:0 auto 12px;"></div>Waiting for QR code...<br><small style="margin-top:6px;display:block;">Make sure the WhatsApp bridge is running</small></div>';
+      }
+      statusEl.textContent = 'Starting WhatsApp bridge...';
+    }
+  } catch(e) {
+    if (!lastQRData) {
+      wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);font-size:13px;">WhatsApp bridge not reachable.<br><small>Run: node whatsapp/server.js</small></div>';
+    }
+    statusEl.textContent = 'Bridge offline';
+  }
+}
+
+// ===== DASHBOARD =====
+async function loadDashboard() {
+  await Promise.all([loadStats(), loadLineChart(), loadDoughnutChart(), loadFollowups(), loadAutoLeads(), loadPipelineBars()]);
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/api/analytics/dashboard`);
+    const d = await r.json();
+    document.getElementById('stat-total').textContent = d.total_leads ?? 0;
+    document.getElementById('stat-new').textContent = d.new_today ?? 0;
+    document.getElementById('stat-conv').textContent = d.converted ?? 0;
+    document.getElementById('stat-rate').textContent = `${d.conversion_rate ?? 0}% conversion rate`;
+    document.getElementById('stat-msgs').textContent = d.messages_today ?? 0;
+  } catch(e) { console.error('loadStats:', e); }
+}
+
+async function loadAutoLeads() {
+  const feed = document.getElementById('auto-leads-feed');
+  try {
+    const r = await fetch(`${API}/api/leads?limit=6`);
+    const d = await r.json();
+    const leads = (d.leads || []).filter(l => l.source === 'whatsapp').slice(0, 5);
+    const allLeads = (d.leads || []).slice(0, 5);
+    const display = leads.length ? leads : allLeads;
+    if (!display.length) {
+      feed.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:12px; text-align:center;">No leads yet<br><small>Leads captured via WhatsApp will appear here</small></div>';
+      return;
+    }
+    feed.innerHTML = '';
+    const container = document.createElement('div');
+    container.className = 'auto-leads-feed';
+    display.forEach(l => {
+      const initials = (l.name || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+      const item = document.createElement('div');
+      item.className = 'auto-lead-item';
+      item.onclick = () => openLeadPanel(l.id);
+      item.innerHTML = `
+        <div class="auto-lead-avatar">${esc(initials)}</div>
+        <div class="auto-lead-info">
+          <div class="auto-lead-name">${esc(l.name)}</div>
+          <div class="auto-lead-meta">${esc(l.phone)} · ${fmtDateShort(l.created_at)}</div>
+        </div>
+        <div class="auto-lead-badge">${badge(l.status)}</div>`;
+      container.appendChild(item);
+    });
+    feed.appendChild(container);
+  } catch(e) {
+    feed.innerHTML = '<div style="color:var(--danger); font-size:12px; padding:12px;">Failed to load</div>';
+  }
+}
+
+async function loadPipelineBars() {
+  const wrap = document.getElementById('pipeline-bars');
+  try {
+    const r = await fetch(`${API}/api/analytics/conversion-funnel`);
+    const d = await r.json();
+    const items = d.data || [];
+    const total = items.reduce((s, i) => s + i.count, 0) || 1;
+    const colors = {
+      new: 'var(--accent)',
+      contacted: 'var(--highlight)',
+      interested: '#4a90b8',
+      converted: 'var(--success)',
+      lost: 'var(--danger)',
+    };
+    if (!items.length) {
+      wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:12px;">No data yet</div>';
+      return;
+    }
+    wrap.innerHTML = `<div class="pipeline-bars">${items.map(item => `
+      <div class="pipeline-row">
+        <div class="pipeline-label">${esc(item.stage)}</div>
+        <div class="pipeline-track">
+          <div class="pipeline-fill" style="width:${Math.round(item.count / total * 100)}%; background:${colors[item.stage] || 'var(--accent)'}"></div>
+        </div>
+        <div class="pipeline-count">${item.count}</div>
+      </div>`).join('')}
+    </div>`;
+  } catch(e) {
+    wrap.innerHTML = '<div style="color:var(--danger); font-size:12px; padding:8px;">Failed to load</div>';
+  }
+}
+
+async function loadLineChart() {
+  try {
+    const r = await fetch(`${API}/api/analytics/leads-over-time`);
+    const d = await r.json();
+    const items = d.data || [];
+    const labels = items.map(i => i.date);
+    const values = items.map(i => i.count);
+    const ctx = document.getElementById('chart-line').getContext('2d');
+    if (lineChart) lineChart.destroy();
+    lineChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'New Leads',
+          data: values,
+          borderColor: '#547A95',
+          backgroundColor: 'rgba(84,122,149,0.1)',
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: '#547A95',
+          pointRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#547A95', maxTicksLimit: 8, font: { size: 11 } }, grid: { color: 'rgba(84,122,149,0.1)' } },
+          y: { ticks: { color: '#547A95', font: { size: 11 } }, grid: { color: 'rgba(84,122,149,0.1)' }, beginAtZero: true }
+        }
+      }
+    });
+  } catch(e) { console.error('loadLineChart:', e); }
+}
+
+async function loadDoughnutChart() {
+  try {
+    const r = await fetch(`${API}/api/analytics/conversion-funnel`);
+    const d = await r.json();
+    const items = d.data || [];
+    const labels = items.map(i => i.stage);
+    const values = items.map(i => i.count);
+    const ctx = document.getElementById('chart-doughnut').getContext('2d');
+    if (doughnutChart) doughnutChart.destroy();
+    doughnutChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: ['#547A95','#C2A56D','#4a90b8','#2d7a4f','#c62828'],
+          borderWidth: 2,
+          borderColor: '#fff',
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#547A95', boxWidth: 12, padding: 12, font: { size: 12 } }
+          }
+        }
+      }
+    });
+  } catch(e) { console.error('loadDoughnutChart:', e); }
+}
+
+async function loadFollowups() {
+  const wrap = document.getElementById('followup-table-wrap');
+  try {
+    const r = await fetch(`${API}/api/analytics/followup`);
+    const d = await r.json();
+    const leads = d.leads || [];
+    if (!leads.length) {
+      wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:16px;">No follow-ups due — you\'re all caught up!</div>';
+      return;
+    }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Follow-up Due</th></tr></thead>
+      <tbody>${leads.map(l => `
+        <tr onclick="openLeadPanel(${l.id})">
+          <td style="font-weight:600;">${esc(l.name)}</td>
+          <td style="color:var(--text-muted);">${esc(l.phone)}</td>
+          <td>${badge(l.status)}</td>
+          <td style="color:var(--warning); font-weight:600;">${l.follow_up_date || '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = '<div style="color:var(--danger); padding:16px; font-size:13px;">Failed to load follow-ups</div>';
+  }
+}
+
+// ===== LEADS =====
+async function loadLeads() {
+  const wrap = document.getElementById('leads-table-wrap');
+  wrap.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
+  try {
+    const status = document.getElementById('leads-status-filter').value;
+    const search = document.getElementById('leads-search').value.trim();
+    let url = `${API}/api/leads?limit=200`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    const r = await fetch(url);
+    const d = await r.json();
+    const leads = d.leads || [];
+    if (!leads.length) {
+      wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:24px; text-align:center;">No leads found</div>';
+      return;
+    }
+    wrap.innerHTML = `<table>
+      <thead><tr>
+        <th>Name</th><th>Phone</th><th>Source</th><th>Status</th>
+        <th>AI Score</th><th>Last Contacted</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${leads.map(l => `
+        <tr onclick="openLeadPanel(${l.id})">
+          <td style="font-weight:600;">${esc(l.name)}</td>
+          <td style="color:var(--text-muted);">${esc(l.phone)}</td>
+          <td>${badge(l.source, 'source')}</td>
+          <td>${badge(l.status)}</td>
+          <td>${scoreBar(l.ai_score)}</td>
+          <td style="color:var(--text-muted); font-size:12px;">${fmtDate(l.last_contacted)}</td>
+          <td onclick="event.stopPropagation()" style="display:flex; gap:6px; flex-wrap:wrap; padding:8px 14px;">
+            <button class="btn btn-ghost btn-sm" onclick="openLeadPanel(${l.id})">View</button>
+            <button class="btn btn-ghost btn-sm" onclick="scoreLead(${l.id}, this)">Score</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:var(--danger); padding:24px; font-size:13px;">Error: ${e.message}</div>`;
+  }
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(loadLeads, 400);
+}
+
+async function scoreLead(leadId, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-top-color:#fff;"></span>';
+  try {
+    const r = await fetch(`${API}/api/leads/${leadId}/score`, { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    toast(`Lead scored: ${d.score}/100 (${d.intent} intent)`, 'success');
+    loadLeads();
+  } catch(e) {
+    toast(`Score failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// ===== LEAD PANEL =====
+async function openLeadPanel(leadId) {
+  currentLeadId = leadId;
+  document.getElementById('lead-panel').classList.add('open');
+  document.getElementById('panel-backdrop').classList.add('open');
+  try {
+    const [lr, mr] = await Promise.all([
+      fetch(`${API}/api/leads/${leadId}`),
+      fetch(`${API}/api/leads/${leadId}/messages`),
+    ]);
+    const lead = await lr.json();
+    const msgData = await mr.json();
+    const messages = msgData.messages || [];
+
+    document.getElementById('panel-lead-name').textContent = lead.name;
+    document.getElementById('panel-lead-phone').textContent = lead.phone;
+    document.getElementById('panel-source').textContent = lead.source;
+    document.getElementById('panel-score').textContent = lead.ai_score ? `${lead.ai_score}/100` : 'Not scored';
+    document.getElementById('panel-created').textContent = fmtDate(lead.created_at) || '—';
+    document.getElementById('panel-last').textContent = fmtDate(lead.last_contacted) || '—';
+    document.getElementById('panel-ai-summary').textContent = lead.ai_summary || '';
+    document.getElementById('panel-status-sel').value = lead.status;
+    document.getElementById('panel-followup').value = lead.follow_up_date ? lead.follow_up_date.split('T')[0] : '';
+    document.getElementById('panel-notes').value = lead.notes || '';
+
+    const chat = document.getElementById('panel-chat');
+    if (!messages.length) {
+      chat.innerHTML = '<div style="color:var(--text-muted); font-size:12px; text-align:center; padding:16px;">No messages yet</div>';
+    } else {
+      chat.innerHTML = messages.map(m => `
+        <div class="bubble-wrap ${m.direction}">
+          <div>
+            <div class="bubble">${esc(m.body)}</div>
+            <div class="bubble-time">${fmtDate(m.timestamp)}</div>
+          </div>
+        </div>`).join('');
+      chat.scrollTop = chat.scrollHeight;
+    }
+    document.getElementById('reply-suggestion-wrap').style.display = 'none';
+    document.getElementById('panel-message').value = '';
+  } catch(e) {
+    toast('Failed to load lead details', 'error');
+  }
+}
+
+function closeLeadPanel() {
+  document.getElementById('lead-panel').classList.remove('open');
+  document.getElementById('panel-backdrop').classList.remove('open');
+  currentLeadId = null;
+}
+
+async function deleteLead() {
+  if (!currentLeadId) return;
+  const name = document.getElementById('panel-lead-name').textContent;
+  if (!confirm(`Delete lead "${name}"? This cannot be undone.`)) return;
+  const btn = document.getElementById('btn-delete-lead');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/api/leads/${currentLeadId}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(await r.text());
+    toast(`Lead "${name}" deleted`, 'success');
+    closeLeadPanel();
+    if (currentPage === 'leads') loadLeads();
+    if (currentPage === 'dashboard') loadDashboard();
+  } catch(e) {
+    toast(`Delete failed: ${e.message}`, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function updateLeadFromPanel() {
+  if (!currentLeadId) return;
+  const status = document.getElementById('panel-status-sel').value;
+  const follow_up_date = document.getElementById('panel-followup').value || null;
+  const notes = document.getElementById('panel-notes').value;
+  try {
+    const r = await fetch(`${API}/api/leads/${currentLeadId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, follow_up_date, notes }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    toast('Lead updated', 'success');
+    if (currentPage === 'leads') loadLeads();
+    if (currentPage === 'dashboard') loadFollowups();
+  } catch(e) {
+    toast(`Update failed: ${e.message}`, 'error');
+  }
+}
+
+async function suggestReply() {
+  if (!currentLeadId) return;
+  const btn = document.getElementById('btn-suggest');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;"></span> Thinking...';
+  try {
+    const r = await fetch(`${API}/api/ai/suggest-reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: currentLeadId }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    document.getElementById('reply-suggestion-text').textContent = d.suggestion;
+    document.getElementById('reply-suggestion-wrap').style.display = 'block';
+  } catch(e) {
+    toast(`Suggest reply failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✨ Suggest Reply';
+  }
+}
+
+function useSuggestion() {
+  const text = document.getElementById('reply-suggestion-text').textContent;
+  document.getElementById('panel-message').value = text;
+  document.getElementById('reply-suggestion-wrap').style.display = 'none';
+}
+
+async function sendPanelMessage() {
+  if (!currentLeadId) return;
+  const msg = document.getElementById('panel-message').value.trim();
+  if (!msg) { toast('Message cannot be empty', 'error'); return; }
+  const btn = document.getElementById('btn-send-msg');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/api/leads/${currentLeadId}/send-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg }),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Send failed');
+    }
+    toast('Message sent!', 'success');
+    document.getElementById('panel-message').value = '';
+    openLeadPanel(currentLeadId);
+  } catch(e) {
+    toast(`Send failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ===== ADD LEAD MODAL =====
+function openAddLeadModal() {
+  document.getElementById('add-lead-modal').classList.add('open');
+  document.getElementById('new-lead-name').value = '';
+  document.getElementById('new-lead-phone').value = '';
+  document.getElementById('new-lead-source').value = 'manual';
+  setTimeout(() => document.getElementById('new-lead-name').focus(), 100);
+}
+
+function closeAddLeadModal() {
+  document.getElementById('add-lead-modal').classList.remove('open');
+}
+
+async function submitAddLead() {
+  const name = document.getElementById('new-lead-name').value.trim();
+  const phone = document.getElementById('new-lead-phone').value.trim();
+  const source = document.getElementById('new-lead-source').value;
+  if (!name || !phone) { toast('Name and phone are required', 'error'); return; }
+  try {
+    const r = await fetch(`${API}/api/leads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone, source }),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail || 'Failed to add lead');
+    }
+    toast('Lead added!', 'success');
+    closeAddLeadModal();
+    if (currentPage === 'leads') loadLeads();
+    if (currentPage === 'dashboard') loadAutoLeads();
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'error');
+  }
+}
+
+// ===== MESSAGES =====
+async function loadMessages() {
+  const list = document.getElementById('messages-list');
+  list.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
+  try {
+    const r = await fetch(`${API}/api/messages/recent?limit=50`);
+    const d = await r.json();
+    const msgs = d.messages || [];
+    if (!msgs.length) {
+      list.innerHTML = '<div style="color:var(--text-muted); padding:24px; font-size:13px; text-align:center;">No messages yet</div>';
+      return;
+    }
+    list.innerHTML = '';
+    const timeline = document.createElement('div');
+    timeline.className = 'msg-timeline';
+    msgs.forEach(m => timeline.appendChild(renderMessageItem(m, m.lead_name)));
+    list.appendChild(timeline);
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--danger); padding:16px; font-size:13px;">Error: ${e.message}</div>`;
+  }
+}
+
+function renderMessageItem(msg, leadName) {
+  const div = document.createElement('div');
+  div.className = 'msg-item';
+  const isIn = msg.direction === 'inbound';
+  const arrowColor = isIn ? 'var(--accent)' : 'var(--success)';
+  const arrow = isIn ? '←' : '→';
+  div.innerHTML = `
+    <div class="msg-dir" style="color:${arrowColor};">${arrow}</div>
+    <div class="msg-content">
+      <div class="msg-meta">
+        <strong>${esc(leadName || msg.phone)}</strong>
+        · ${esc(msg.phone)} · ${fmtDate(msg.timestamp)}
+      </div>
+      <div class="msg-body">${esc(msg.body)}</div>
+    </div>`;
+  return div;
+}
+
+// ===== AI INSIGHTS =====
+async function generateInsights() {
+  const btn = document.getElementById('btn-insights');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-top-color:#fff;"></span> Generating...';
+  try {
+    const r = await fetch(`${API}/api/ai/daily-insights`);
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    document.getElementById('insights-text').textContent = d.insights;
+    document.getElementById('insights-card').style.display = 'block';
+    toast('Insights generated!', 'success');
+  } catch(e) {
+    toast(`Failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 Generate Today\'s Insights';
+  }
+}
+
+async function scoreAllLeads() {
+  const btn = document.getElementById('btn-score-all');
+  btn.disabled = true;
+  document.getElementById('score-all-card').style.display = 'block';
+  document.getElementById('score-all-status').textContent = 'Starting...';
+  document.getElementById('score-progress-fill').style.width = '0%';
+  try {
+    const r = await fetch(`${API}/api/ai/score-all`, { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    pollScoreProgress();
+  } catch(e) {
+    toast(`Score-all failed: ${e.message}`, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function pollScoreProgress() {
+  const btn = document.getElementById('btn-score-all');
+  try {
+    const r = await fetch(`${API}/api/ai/score-all/progress`);
+    const d = await r.json();
+    const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0;
+    document.getElementById('score-progress-fill').style.width = `${pct}%`;
+    document.getElementById('score-all-status').textContent =
+      `${d.done}/${d.total} leads scored${d.errors ? ` (${d.errors} errors)` : ''}`;
+    if (d.running) {
+      setTimeout(pollScoreProgress, 1500);
+    } else {
+      toast(`Scoring complete: ${d.done} leads scored`, 'success');
+      btn.disabled = false;
+      loadTopLeads();
+      if (currentPage === 'leads') loadLeads();
+    }
+  } catch(e) {
+    btn.disabled = false;
+    console.error('pollScoreProgress:', e);
+  }
+}
+
+async function loadTopLeads() {
+  const wrap = document.getElementById('top-leads-wrap');
+  wrap.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
+  try {
+    const r = await fetch(`${API}/api/ai/top-leads?limit=5`);
+    const d = await r.json();
+    const leads = d.leads || [];
+    if (!leads.length) {
+      wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:16px; text-align:center;">No scored leads yet.<br><small>Click "Score All Leads" to begin.</small></div>';
+      return;
+    }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Name</th><th>Phone</th><th>Score</th><th>Summary</th></tr></thead>
+      <tbody>${leads.map(l => `
+        <tr onclick="openLeadPanel(${l.id})">
+          <td style="font-weight:600;">${esc(l.name)}</td>
+          <td style="color:var(--text-muted);">${esc(l.phone)}</td>
+          <td>${scoreBar(l.ai_score)}</td>
+          <td style="color:var(--text-muted); font-size:12px;">${esc(l.ai_summary || '—')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:var(--danger); padding:16px; font-size:13px;">Error: ${e.message}</div>`;
+  }
+}
+
+// ===== REPORTS =====
+async function loadReports() {
+  const wrap = document.getElementById('reports-wrap');
+  wrap.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
+  try {
+    const r = await fetch(`${API}/api/analytics/reports`);
+    const d = await r.json();
+    const reports = d.reports || [];
+    if (!reports.length) {
+      wrap.innerHTML = '<div style="color:var(--text-muted); padding:24px; font-size:13px; text-align:center;">No reports yet.<br><small>Reports are generated automatically each day at 8 AM.</small></div>';
+      return;
+    }
+    wrap.innerHTML = `<div class="report-cards">
+      ${reports.map(rpt => `
+        <div class="report-card">
+          <div class="report-date">${rpt.report_date}</div>
+          <div class="report-stats">
+            <div class="report-stat-item">Total: <strong>${rpt.total_leads}</strong></div>
+            <div class="report-stat-item">New: <strong>${rpt.new_leads}</strong></div>
+            <div class="report-stat-item">Contacted: <strong>${rpt.contacted}</strong></div>
+            <div class="report-stat-item">Converted: <strong>${rpt.converted}</strong></div>
+          </div>
+          <div class="report-insights">${esc(rpt.ai_insights || '—')}</div>
+        </div>`).join('')}
+    </div>`;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:var(--danger); padding:16px; font-size:13px;">Error: ${e.message}</div>`;
+  }
+}
+
+async function downloadCSV() {
+  try {
+    const r = await fetch(`${API}/api/leads?limit=5000`);
+    const d = await r.json();
+    const leads = d.leads || [];
+    const headers = ['ID','Name','Phone','Source','Status','AI Score','AI Summary','Notes','Created At','Last Contacted','Follow Up Date'];
+    const rows = leads.map(l => [
+      l.id, q(l.name), q(l.phone), q(l.source), q(l.status),
+      l.ai_score, q(l.ai_summary), q(l.notes),
+      q(l.created_at), q(l.last_contacted), q(l.follow_up_date)
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leadflow-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('CSV downloaded!', 'success');
+  } catch(e) {
+    toast(`CSV export failed: ${e.message}`, 'error');
+  }
+}
+
+function q(v) {
+  if (v == null) return '';
+  return `"${String(v).replace(/"/g, '""')}"`;
+}
+
+// ===== HELPERS =====
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(ts) {
+  if (!ts) return null;
+  try {
+    const iso = typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString();
+  } catch(e) { return ts; }
+}
+
+function fmtDateShort(ts) {
+  if (!ts) return '—';
+  try {
+    const iso = typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleDateString();
+  } catch(e) { return ts; }
+}
+
+function badge(status, type) {
+  if (!status) return '—';
+  return `<span class="badge badge-${status.toLowerCase()}">${esc(status)}</span>`;
+}
+
+function scoreBar(score) {
+  const s = score || 0;
+  let cls = s > 70 ? 'high' : s > 40 ? 'mid' : 'low';
+  const color = cls === 'high' ? 'var(--success)' : cls === 'mid' ? 'var(--warning)' : 'var(--danger)';
+  return `<div class="score-bar-wrap">
+    <div class="score-bar"><div class="score-fill ${cls}" style="width:${s}%"></div></div>
+    <span class="score-num" style="color:${color}">${s}</span>
+  </div>`;
+}
+
+function toast(msg, type='info') {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ===== INIT =====
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('wa-connect-btn').onclick = openQRModal;
+  loadDashboard();
+  dashboardInterval = setInterval(loadDashboard, 60000);
+  pollWAStatus();
+  setInterval(pollWAStatus, 10000);
+  connectWebSocket();
+
+  document.getElementById('add-lead-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeAddLeadModal();
+  });
+  document.getElementById('qr-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeQRModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeLeadPanel(); closeAddLeadModal(); closeQRModal(); }
+  });
+});
+</script>
+</body>
+</html>

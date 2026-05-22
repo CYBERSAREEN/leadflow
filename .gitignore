@@ -1,0 +1,36 @@
+# Environment & secrets
+.env
+*.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Database (local only)
+data/leadflow.db
+data/*.db
+*.sqlite
+*.sqlite3
+
+# WhatsApp session (contains auth tokens)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
