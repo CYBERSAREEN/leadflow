@@ -588,6 +588,20 @@
     <button class="wa-connect-btn" id="wa-connect-btn">
       📱 Connect WhatsApp
     </button>
+    <!-- Bridge mode toggle -->
+    <div id="wa-mode-row" style="display:flex; align-items:center; gap:6px; padding:6px 12px 2px; font-size:11px; color:var(--sidebar-mut);">
+      <span>Bridge:</span>
+      <button id="btn-mode-render" onclick="setWAMode(false)"
+        style="padding:2px 8px; border-radius:10px; font-size:10px; border:1px solid; cursor:pointer;
+               background: rgba(84,122,149,0.15); color:var(--sidebar-txt); border-color:rgba(84,122,149,0.4);">
+        ☁ Render
+      </button>
+      <button id="btn-mode-local" onclick="setWAMode(true)"
+        style="padding:2px 8px; border-radius:10px; font-size:10px; border:1px solid; cursor:pointer;
+               background: transparent; color:var(--sidebar-mut); border-color:rgba(255,255,255,0.1);">
+        💻 Local
+      </button>
+    </div>
   </div>
 </aside>
 
@@ -892,6 +906,25 @@ const WA_MAX_RETRIES  = 2;      // 2 retries × 30 s before local fallback
 
 function waAPIUrl(path) {
   return waLocalMode ? `http://localhost:3001${path}` : `${API}/api/whatsapp${path}`;
+}
+
+function setWAMode(local) {
+  waLocalMode = local;
+  waRetries = 0;
+  waRetryScheduled = false;
+  const renderBtn = document.getElementById('btn-mode-render');
+  const localBtn  = document.getElementById('btn-mode-local');
+  if (renderBtn && localBtn) {
+    renderBtn.style.background = local ? 'transparent' : 'rgba(84,122,149,0.15)';
+    renderBtn.style.color = local ? 'var(--sidebar-mut)' : 'var(--sidebar-txt)';
+    renderBtn.style.borderColor = local ? 'rgba(255,255,255,0.1)' : 'rgba(84,122,149,0.4)';
+    localBtn.style.background = local ? 'rgba(194,165,109,0.2)' : 'transparent';
+    localBtn.style.color = local ? '#C2A56D' : 'var(--sidebar-mut)';
+    localBtn.style.borderColor = local ? 'rgba(194,165,109,0.5)' : 'rgba(255,255,255,0.1)';
+  }
+  document.getElementById('wa-label').textContent = local ? '📱 Local Mode' : 'Disconnected';
+  toast(local ? 'Switched to local bridge (localhost:3001)' : 'Switched to Render bridge', 'info');
+  pollWAStatus();
 }
 
 // ===== NAVIGATION =====
@@ -1587,16 +1620,37 @@ async function sendPanelMessage() {
   const btn = document.getElementById('btn-send-msg');
   btn.disabled = true;
   try {
-    const r = await fetch(`${API}/api/leads/${currentLeadId}/send-message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg }),
-    });
-    if (!r.ok) {
-      const err = await r.json();
-      throw new Error(err.detail || 'Send failed');
+    if (waLocalMode) {
+      // In local mode: send directly to the local bridge
+      // We need the lead's phone number
+      const lead = await apiFetch(`${API}/api/leads/${currentLeadId}`);
+      const phone = lead.phone;
+      const r = await fetch('http://localhost:3001/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, message: msg }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || 'Local bridge send failed');
+      // Save message to backend DB
+      await apiFetch(`${API}/api/messages/save-outbound`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, message: msg }),
+      }).catch(() => {}); // non-fatal if save fails
+    } else {
+      // Remote mode: go through backend → Render bridge
+      const r = await fetch(`${API}/api/leads/${currentLeadId}/send-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+      });
+      if (!r.ok) {
+        const err = await r.json();
+        throw new Error(err.detail || 'Send failed');
+      }
     }
-    toast('Message sent!', 'success');
+    toast('Message sent! ✓', 'success');
     document.getElementById('panel-message').value = '';
     openLeadPanel(currentLeadId);
   } catch(e) {

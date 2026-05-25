@@ -129,9 +129,11 @@ app.post('/send', async (req, res) => {
 });
 
 app.get('/status', (req, res) => {
+  // Use client.info as the authoritative source — isReady can lag briefly after auth
+  const phone = client.info ? client.info.wid.user : null;
   res.json({
-    connected: isReady,
-    phone: client.info ? client.info.wid.user : null,
+    connected: isReady || !!phone,
+    phone,
   });
 });
 
