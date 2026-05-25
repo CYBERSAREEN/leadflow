@@ -1,19 +1,25 @@
 import os
-import sqlite3
 import logging
-from datetime import datetime, date
-from typing import Optional, Any
+import psycopg2
+import psycopg2.extras
+from datetime import date
+from typing import Optional
 
 logger = logging.getLogger(__name__)
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "leadflow.db")
 
 
 def get_connection():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
+    conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
+
+
+def row_to_dict(row) -> dict:
+    if row is None:
+        return None
+    return dict(row)
 
 
 def init_db():
@@ -21,9 +27,9 @@ def init_db():
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.executescript("""
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS leads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 phone TEXT UNIQUE NOT NULL,
                 source TEXT DEFAULT 'manual',
@@ -34,20 +40,24 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_contacted TIMESTAMP,
                 follow_up_date TIMESTAMP
-            );
+            )
+        """)
 
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 lead_id INTEGER REFERENCES leads(id),
                 phone TEXT NOT NULL,
                 direction TEXT NOT NULL,
                 body TEXT NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 wa_message_id TEXT UNIQUE
-            );
+            )
+        """)
 
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS daily_reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 report_date DATE UNIQUE,
                 total_leads INTEGER,
                 new_leads INTEGER,
@@ -55,20 +65,15 @@ def init_db():
                 converted INTEGER,
                 ai_insights TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+            )
         """)
+
         conn.commit()
         conn.close()
         logger.info("Database initialized successfully")
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"Database initialization error: {e}")
         raise
-
-
-def row_to_dict(row) -> dict:
-    if row is None:
-        return None
-    return dict(row)
 
 
 def get_all_leads(status: Optional[str] = None, limit: int = 100, offset: int = 0) -> list:
@@ -77,18 +82,18 @@ def get_all_leads(status: Optional[str] = None, limit: int = 100, offset: int = 
         cur = conn.cursor()
         if status:
             cur.execute(
-                "SELECT * FROM leads WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM leads WHERE status = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 (status, limit, offset)
             )
         else:
             cur.execute(
-                "SELECT * FROM leads ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM leads ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 (limit, offset)
             )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_all_leads error: {e}")
         return []
 
@@ -97,11 +102,11 @@ def get_lead_by_id(lead_id: int) -> Optional[dict]:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        cur.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         row = row_to_dict(cur.fetchone())
         conn.close()
         return row
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_lead_by_id error: {e}")
         return None
 
@@ -110,11 +115,11 @@ def get_lead_by_phone(phone: str) -> Optional[dict]:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM leads WHERE phone = ?", (phone,))
+        cur.execute("SELECT * FROM leads WHERE phone = %s", (phone,))
         row = row_to_dict(cur.fetchone())
         conn.close()
         return row
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_lead_by_phone error: {e}")
         return None
 
@@ -124,19 +129,24 @@ def create_lead(name: str, phone: str, source: str = "manual") -> Optional[dict]
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO leads (name, phone, source) VALUES (?, ?, ?)",
+            "INSERT INTO leads (name, phone, source) VALUES (%s, %s, %s) RETURNING id",
             (name, phone, source)
         )
-        lead_id = cur.lastrowid
+        result = cur.fetchone()
+        if not result:
+            conn.rollback()
+            conn.close()
+            return None
+        lead_id = result["id"]
         conn.commit()
-        cur.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        cur.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         row = row_to_dict(cur.fetchone())
         conn.close()
         return row
-    except sqlite3.IntegrityError as e:
+    except psycopg2.IntegrityError as e:
         logger.error(f"create_lead integrity error (duplicate phone?): {e}")
         return None
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"create_lead error: {e}")
         return None
 
@@ -147,15 +157,15 @@ def update_lead(lead_id: int, **kwargs) -> Optional[dict]:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        fields = ", ".join(f"{k} = ?" for k in kwargs)
+        fields = ", ".join(f"{k} = %s" for k in kwargs)
         values = list(kwargs.values()) + [lead_id]
-        cur.execute(f"UPDATE leads SET {fields} WHERE id = ?", values)
+        cur.execute(f"UPDATE leads SET {fields} WHERE id = %s", values)
         conn.commit()
-        cur.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        cur.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         row = row_to_dict(cur.fetchone())
         conn.close()
         return row
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"update_lead error: {e}")
         return None
 
@@ -164,12 +174,12 @@ def delete_lead(lead_id: int) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM messages WHERE lead_id = ?", (lead_id,))
-        cur.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+        cur.execute("DELETE FROM messages WHERE lead_id = %s", (lead_id,))
+        cur.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
         conn.commit()
         conn.close()
         return True
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"delete_lead error: {e}")
         return False
 
@@ -179,13 +189,13 @@ def get_messages_for_lead(lead_id: int) -> list:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM messages WHERE lead_id = ? ORDER BY timestamp ASC",
+            "SELECT * FROM messages WHERE lead_id = %s ORDER BY timestamp ASC",
             (lead_id,)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_messages_for_lead error: {e}")
         return []
 
@@ -195,29 +205,36 @@ def save_message(phone: str, direction: str, body: str, wa_message_id: Optional[
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT id FROM leads WHERE phone = ?", (phone,))
+        cur.execute("SELECT id FROM leads WHERE phone = %s", (phone,))
         lead_row = cur.fetchone()
         lead_id = lead_row["id"] if lead_row else None
 
         if lead_id and direction == "inbound":
             cur.execute(
-                "UPDATE leads SET last_contacted = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE leads SET last_contacted = CURRENT_TIMESTAMP WHERE id = %s",
                 (lead_id,)
             )
 
         cur.execute(
-            """INSERT OR IGNORE INTO messages (lead_id, phone, direction, body, wa_message_id)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO messages (lead_id, phone, direction, body, wa_message_id)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (wa_message_id) DO NOTHING
+               RETURNING id""",
             (lead_id, phone, direction, body, wa_message_id)
         )
-        msg_id = cur.lastrowid
+        result = cur.fetchone()
+        if not result:
+            conn.rollback()
+            conn.close()
+            return None
+        msg_id = result["id"]
         conn.commit()
 
-        cur.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
+        cur.execute("SELECT * FROM messages WHERE id = %s", (msg_id,))
         row = row_to_dict(cur.fetchone())
         conn.close()
         return row
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"save_message error: {e}")
         return None
 
@@ -231,7 +248,7 @@ def get_dashboard_stats() -> dict:
         total_leads = cur.fetchone()["cnt"]
 
         today = date.today().isoformat()
-        cur.execute("SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = ?", (today,))
+        cur.execute("SELECT COUNT(*) as cnt FROM leads WHERE DATE(created_at) = %s", (today,))
         new_today = cur.fetchone()["cnt"]
 
         cur.execute("SELECT COUNT(*) as cnt FROM leads WHERE status = 'contacted'")
@@ -245,7 +262,7 @@ def get_dashboard_stats() -> dict:
 
         conversion_rate = round((converted / total_leads * 100), 1) if total_leads > 0 else 0.0
 
-        cur.execute("SELECT COUNT(*) as cnt FROM messages WHERE DATE(timestamp) = ?", (today,))
+        cur.execute("SELECT COUNT(*) as cnt FROM messages WHERE DATE(timestamp) = %s", (today,))
         messages_today = cur.fetchone()["cnt"]
 
         cur.execute(
@@ -264,7 +281,7 @@ def get_dashboard_stats() -> dict:
             "messages_today": messages_today,
             "top_sources": top_sources,
         }
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_dashboard_stats error: {e}")
         return {
             "total_leads": 0, "new_today": 0, "contacted": 0,
@@ -280,7 +297,7 @@ def get_leads_needing_followup() -> list:
         today = date.today().isoformat()
         cur.execute(
             """SELECT * FROM leads
-               WHERE follow_up_date <= ?
+               WHERE follow_up_date <= %s
                AND status NOT IN ('converted', 'lost')
                ORDER BY follow_up_date ASC""",
             (today,)
@@ -288,7 +305,7 @@ def get_leads_needing_followup() -> list:
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_leads_needing_followup error: {e}")
         return []
 
@@ -298,9 +315,14 @@ def save_daily_report(report_date: str, stats: dict, ai_insights: str) -> bool:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            """INSERT OR REPLACE INTO daily_reports
-               (report_date, total_leads, new_leads, contacted, converted, ai_insights)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO daily_reports (report_date, total_leads, new_leads, contacted, converted, ai_insights)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               ON CONFLICT (report_date) DO UPDATE SET
+                   total_leads  = EXCLUDED.total_leads,
+                   new_leads    = EXCLUDED.new_leads,
+                   contacted    = EXCLUDED.contacted,
+                   converted    = EXCLUDED.converted,
+                   ai_insights  = EXCLUDED.ai_insights""",
             (
                 report_date,
                 stats.get("total_leads", 0),
@@ -313,7 +335,7 @@ def save_daily_report(report_date: str, stats: dict, ai_insights: str) -> bool:
         conn.commit()
         conn.close()
         return True
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"save_daily_report error: {e}")
         return False
 
@@ -323,13 +345,13 @@ def get_reports(limit: int = 30) -> list:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM daily_reports ORDER BY report_date DESC LIMIT ?",
+            "SELECT * FROM daily_reports ORDER BY report_date DESC LIMIT %s",
             (limit,)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_reports error: {e}")
         return []
 
@@ -341,15 +363,15 @@ def get_leads_over_time(days: int = 30) -> list:
         cur.execute(
             """SELECT DATE(created_at) as date, COUNT(*) as count
                FROM leads
-               WHERE created_at >= DATE('now', ?)
+               WHERE created_at >= CURRENT_DATE - (%s * INTERVAL '1 day')
                GROUP BY DATE(created_at)
                ORDER BY date ASC""",
-            (f"-{days} days",)
+            (days,)
         )
-        rows = [{"date": r["date"], "count": r["count"]} for r in cur.fetchall()]
+        rows = [{"date": str(r["date"]), "count": r["count"]} for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_leads_over_time error: {e}")
         return []
 
@@ -361,11 +383,11 @@ def get_conversion_funnel() -> list:
         statuses = ["new", "contacted", "interested", "converted", "lost"]
         results = []
         for s in statuses:
-            cur.execute("SELECT COUNT(*) as cnt FROM leads WHERE status = ?", (s,))
+            cur.execute("SELECT COUNT(*) as cnt FROM leads WHERE status = %s", (s,))
             results.append({"stage": s, "count": cur.fetchone()["cnt"]})
         conn.close()
         return results
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_conversion_funnel error: {e}")
         return []
 
@@ -379,13 +401,13 @@ def get_recent_messages(limit: int = 50) -> list:
                FROM messages m
                LEFT JOIN leads l ON m.lead_id = l.id
                ORDER BY m.timestamp DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (limit,)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_recent_messages error: {e}")
         return []
 
@@ -395,13 +417,13 @@ def get_unscored_leads(limit: int = 10) -> list:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM leads WHERE ai_score = 0 ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM leads WHERE ai_score = 0 ORDER BY created_at DESC LIMIT %s",
             (limit,)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_unscored_leads error: {e}")
         return []
 
@@ -411,13 +433,13 @@ def get_top_scored_leads(limit: int = 5) -> list:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM leads WHERE ai_score > 0 ORDER BY ai_score DESC LIMIT ?",
+            "SELECT * FROM leads WHERE ai_score > 0 ORDER BY ai_score DESC LIMIT %s",
             (limit,)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_top_scored_leads error: {e}")
         return []
 
@@ -428,13 +450,13 @@ def search_leads(query: str) -> list:
         cur = conn.cursor()
         pattern = f"%{query}%"
         cur.execute(
-            "SELECT * FROM leads WHERE name LIKE ? OR phone LIKE ? ORDER BY created_at DESC LIMIT 100",
+            "SELECT * FROM leads WHERE name ILIKE %s OR phone ILIKE %s ORDER BY created_at DESC LIMIT 100",
             (pattern, pattern)
         )
         rows = [row_to_dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"search_leads error: {e}")
         return []
 
@@ -443,12 +465,12 @@ def delete_message(message_id: int) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        cur.execute("DELETE FROM messages WHERE id = %s", (message_id,))
         deleted = cur.rowcount > 0
         conn.commit()
         conn.close()
         return deleted
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"delete_message error: {e}")
         return False
 
@@ -458,10 +480,10 @@ def get_today_report_exists() -> bool:
         conn = get_connection()
         cur = conn.cursor()
         today = date.today().isoformat()
-        cur.execute("SELECT id FROM daily_reports WHERE report_date = ?", (today,))
+        cur.execute("SELECT id FROM daily_reports WHERE report_date = %s", (today,))
         exists = cur.fetchone() is not None
         conn.close()
         return exists
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"get_today_report_exists error: {e}")
         return False
