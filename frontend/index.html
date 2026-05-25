@@ -838,8 +838,9 @@
     <div class="qr-countdown-bar" id="qr-countdown-bar" style="display:none;">
       <div class="qr-countdown-fill" id="qr-countdown-fill"></div>
     </div>
-    <div id="qr-actions" style="margin-top:16px;">
+    <div id="qr-actions" style="margin-top:16px; display:flex; flex-direction:column; gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="refreshQRManual()" style="width:100%;">🔄 Refresh QR</button>
+      <button class="btn btn-ghost btn-sm" id="qr-local-btn" onclick="switchToLocalQR()" style="width:100%; font-size:11px; opacity:0.7;">💻 Use Local Bridge (localhost:3001)</button>
     </div>
   </div>
 </div>
@@ -874,6 +875,7 @@ let qrPollInterval = null;
 let qrInstance = null;
 let lastQRData = null;
 let qrCountdownInterval = null;
+let qrFallbackTimer = null;  // auto-switch to local after 60 s without QR
 
 // ── WebSocket endpoint config ──────────────────────────────────────────────
 const RENDER_WS_URL = 'wss://leadflow-backend-pz63.onrender.com/ws';
@@ -1099,16 +1101,45 @@ function openQRModal() {
   document.getElementById('qr-countdown-bar').style.display = 'none';
   document.getElementById('qr-instructions').style.display = '';
   document.getElementById('qr-actions').style.display = '';
+  // Update modal title to show mode
+  document.querySelector('#qr-modal .modal-title').textContent =
+    waLocalMode ? '📱 Connect WhatsApp (Local)' : 'Connect WhatsApp';
+  // Show/hide local button
+  const localBtn = document.getElementById('qr-local-btn');
+  if (localBtn) localBtn.style.display = waLocalMode ? 'none' : '';
   document.getElementById('qr-modal').classList.add('open');
   fetchQR();
   if (qrPollInterval) clearInterval(qrPollInterval);
   qrPollInterval = setInterval(fetchQR, 3000);
+
+  // Auto-fallback to local after 60 s if no QR appears and not already local
+  if (!waLocalMode) {
+    if (qrFallbackTimer) clearTimeout(qrFallbackTimer);
+    qrFallbackTimer = setTimeout(() => {
+      if (!waLocalMode && !lastQRData) {
+        console.log('[QR] No QR in 60 s — switching to local mode');
+        switchToLocalQR();
+      }
+    }, 60000);
+  }
 }
 
 function closeQRModal() {
   document.getElementById('qr-modal').classList.remove('open');
   if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
   if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
+  if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
+}
+
+function switchToLocalQR() {
+  if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
+  waLocalMode = true;
+  waRetries = 0;
+  waRetryScheduled = false;
+  toast('Switching to local bridge (localhost:3001) — make sure it\'s running', 'info');
+  document.getElementById('wa-label').textContent = '📱 Local Mode';
+  closeQRModal();
+  setTimeout(() => openQRModal(), 400);
 }
 
 function startQRCountdown(seconds) {
@@ -1160,6 +1191,8 @@ async function fetchQR() {
         toast('WhatsApp connected!', 'success');
       }, 1800);
     } else if (d.qr) {
+      // QR received — cancel the local fallback timer
+      if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
       if (d.qr !== lastQRData) {
         lastQRData = d.qr;
         wrap.innerHTML = '';
@@ -1851,6 +1884,11 @@ window.addEventListener('DOMContentLoaded', () => {
   pollWAStatus();
   setInterval(pollWAStatus, 10000);
   connectWebSocket();
+  // Keep Render services warm — ping every 4 min to prevent 15-min spin-down
+  setInterval(() => {
+    fetch(`${API}/api/health`).catch(() => {});
+    if (!waLocalMode) fetch('/api/whatsapp/status').catch(() => {});
+  }, 240000);
 
   document.getElementById('add-lead-modal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeAddLeadModal();
