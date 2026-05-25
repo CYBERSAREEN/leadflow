@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: leadflow-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false        # Set this in Render dashboard (Supabase URL)
+      - key: GROQ_API_KEY
+        sync: false        # Set this in Render dashboard
+      - key: WA_MANAGER_PHONE
+        value: "917087603933"
