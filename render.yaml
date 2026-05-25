@@ -1,4 +1,5 @@
 services:
+  # ── FastAPI Backend ──────────────────────────────────────────
   - type: web
     name: leadflow-backend
     runtime: docker
@@ -6,8 +7,20 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        sync: false        # Set this in Render dashboard (Supabase URL)
+        sync: false        # Set in Render dashboard (Supabase URL)
       - key: GROQ_API_KEY
-        sync: false        # Set this in Render dashboard
+        sync: false        # Set in Render dashboard
       - key: WA_MANAGER_PHONE
         value: "917087603933"
+      - key: WA_SERVER_URL
+        sync: false        # Set to WhatsApp bridge URL after first deploy
+
+  # ── WhatsApp Bridge ──────────────────────────────────────────
+  - type: web
+    name: leadflow-whatsapp
+    runtime: docker
+    dockerfilePath: ./Dockerfile.whatsapp
+    healthCheckPath: /health
+    envVars:
+      - key: FASTAPI_URL
+        sync: false        # Set to FastAPI backend URL after first deploy

@@ -7,8 +7,8 @@ const { handleIncomingMessage } = require('./message_handler');
 const app = express();
 app.use(express.json());
 
-const FASTAPI_URL = 'http://localhost:8000';
-const PORT = 3001;
+const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 let isReady = false;
 let currentQR = null;
