@@ -850,6 +850,20 @@
 <script>
 const API = window.LEADFLOW_API || '';
 let currentPage = 'dashboard';
+
+// ===== SAFE FETCH — handles non-JSON / 5xx from backend =====
+async function apiFetch(url, options = {}) {
+  const r = await fetch(url, options);
+  const text = await r.text();
+  if (!text || !text.trim()) throw new Error('Empty response — backend may be starting up');
+  let data;
+  try { data = JSON.parse(text); } catch(e) {
+    if (!r.ok) throw new Error(`Backend error (${r.status}) — it may be waking up, retry in 30s`);
+    throw new Error('Invalid JSON from server');
+  }
+  if (!r.ok) throw new Error(data?.detail || data?.message || `Error ${r.status}`);
+  return data;
+}
 let currentLeadId = null;
 let lineChart = null;
 let doughnutChart = null;
@@ -951,8 +965,7 @@ function prependMessage(msg, leadName) {
 // ===== WHATSAPP STATUS =====
 async function pollWAStatus() {
   try {
-    const r = await fetch(`${API}/api/whatsapp/status`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/whatsapp/status`);
     const dot = document.getElementById('wa-dot');
     const label = document.getElementById('wa-label');
     const btn = document.getElementById('wa-connect-btn');
@@ -982,8 +995,7 @@ async function pollWAStatus() {
 async function disconnectWhatsApp() {
   if (!confirm('Disconnect WhatsApp? You will need to scan the QR code again to reconnect.')) return;
   try {
-    const r = await fetch(`${API}/api/whatsapp/disconnect`, { method: 'POST' });
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/whatsapp/disconnect`, { method: 'POST' });
     if (d.success) {
       toast('WhatsApp disconnected', 'info');
       pollWAStatus();
@@ -1045,8 +1057,7 @@ async function fetchQR() {
   const wrap = document.getElementById('qr-canvas-wrap');
   const statusEl = document.getElementById('qr-status-text');
   try {
-    const r = await fetch(`${API}/api/whatsapp/qr`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/whatsapp/qr`);
     if (d.connected) {
       if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
       if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
@@ -1085,9 +1096,9 @@ async function fetchQR() {
     }
   } catch(e) {
     if (!lastQRData) {
-      wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);font-size:13px;">WhatsApp bridge not reachable.<br><small>Run: node whatsapp/server.js</small></div>';
+      wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;">📱 WhatsApp bridge offline<br><small style="margin-top:8px;display:block;line-height:1.6;">The bridge runs as a separate service.<br>Contact your admin to enable it.</small></div>';
     }
-    statusEl.textContent = 'Bridge offline';
+    statusEl.textContent = 'Bridge offline — runs as separate service';
   }
 }
 
@@ -1098,8 +1109,7 @@ async function loadDashboard() {
 
 async function loadStats() {
   try {
-    const r = await fetch(`${API}/api/analytics/dashboard`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/dashboard`);
     document.getElementById('stat-total').textContent = d.total_leads ?? 0;
     document.getElementById('stat-new').textContent = d.new_today ?? 0;
     document.getElementById('stat-conv').textContent = d.converted ?? 0;
@@ -1111,8 +1121,7 @@ async function loadStats() {
 async function loadAutoLeads() {
   const feed = document.getElementById('auto-leads-feed');
   try {
-    const r = await fetch(`${API}/api/leads?limit=6`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/leads?limit=6`);
     const leads = (d.leads || []).filter(l => l.source === 'whatsapp').slice(0, 5);
     const allLeads = (d.leads || []).slice(0, 5);
     const display = leads.length ? leads : allLeads;
@@ -1146,8 +1155,7 @@ async function loadAutoLeads() {
 async function loadPipelineBars() {
   const wrap = document.getElementById('pipeline-bars');
   try {
-    const r = await fetch(`${API}/api/analytics/conversion-funnel`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/conversion-funnel`);
     const items = d.data || [];
     const total = items.reduce((s, i) => s + i.count, 0) || 1;
     const colors = {
@@ -1177,8 +1185,7 @@ async function loadPipelineBars() {
 
 async function loadLineChart() {
   try {
-    const r = await fetch(`${API}/api/analytics/leads-over-time`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/leads-over-time`);
     const items = d.data || [];
     const labels = items.map(i => i.date);
     const values = items.map(i => i.count);
@@ -1214,8 +1221,7 @@ async function loadLineChart() {
 
 async function loadDoughnutChart() {
   try {
-    const r = await fetch(`${API}/api/analytics/conversion-funnel`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/conversion-funnel`);
     const items = d.data || [];
     const labels = items.map(i => i.stage);
     const values = items.map(i => i.count);
@@ -1249,8 +1255,7 @@ async function loadDoughnutChart() {
 async function loadFollowups() {
   const wrap = document.getElementById('followup-table-wrap');
   try {
-    const r = await fetch(`${API}/api/analytics/followup`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/followup`);
     const leads = d.leads || [];
     if (!leads.length) {
       wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:16px;">No follow-ups due — you\'re all caught up!</div>';
@@ -1282,8 +1287,7 @@ async function loadLeads() {
     let url = `${API}/api/leads?limit=200`;
     if (status) url += `&status=${encodeURIComponent(status)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await apiFetch(url);
     const leads = d.leads || [];
     if (!leads.length) {
       wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:24px; text-align:center;">No leads found</div>';
@@ -1524,8 +1528,7 @@ async function loadMessages() {
   const list = document.getElementById('messages-list');
   list.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
   try {
-    const r = await fetch(`${API}/api/messages/recent?limit=50`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/messages/recent?limit=50`);
     const msgs = d.messages || [];
     if (!msgs.length) {
       list.innerHTML = '<div style="color:var(--text-muted); padding:24px; font-size:13px; text-align:center;">No messages yet</div>';
@@ -1598,8 +1601,7 @@ async function scoreAllLeads() {
 async function pollScoreProgress() {
   const btn = document.getElementById('btn-score-all');
   try {
-    const r = await fetch(`${API}/api/ai/score-all/progress`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/ai/score-all/progress`);
     const pct = d.total > 0 ? Math.round((d.done / d.total) * 100) : 0;
     document.getElementById('score-progress-fill').style.width = `${pct}%`;
     document.getElementById('score-all-status').textContent =
@@ -1622,8 +1624,7 @@ async function loadTopLeads() {
   const wrap = document.getElementById('top-leads-wrap');
   wrap.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
   try {
-    const r = await fetch(`${API}/api/ai/top-leads?limit=5`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/ai/top-leads?limit=5`);
     const leads = d.leads || [];
     if (!leads.length) {
       wrap.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:16px; text-align:center;">No scored leads yet.<br><small>Click "Score All Leads" to begin.</small></div>';
@@ -1650,8 +1651,7 @@ async function loadReports() {
   const wrap = document.getElementById('reports-wrap');
   wrap.innerHTML = '<div class="loading-center"><div class="spinner"></div> Loading...</div>';
   try {
-    const r = await fetch(`${API}/api/analytics/reports`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/analytics/reports`);
     const reports = d.reports || [];
     if (!reports.length) {
       wrap.innerHTML = '<div style="color:var(--text-muted); padding:24px; font-size:13px; text-align:center;">No reports yet.<br><small>Reports are generated automatically each day at 8 AM.</small></div>';
@@ -1677,8 +1677,7 @@ async function loadReports() {
 
 async function downloadCSV() {
   try {
-    const r = await fetch(`${API}/api/leads?limit=5000`);
-    const d = await r.json();
+    const d = await apiFetch(`${API}/api/leads?limit=5000`);
     const leads = d.leads || [];
     const headers = ['ID','Name','Phone','Source','Status','AI Score','AI Summary','Notes','Created At','Last Contacted','Follow Up Date'];
     const rows = leads.map(l => [
