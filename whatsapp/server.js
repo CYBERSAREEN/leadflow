@@ -7,6 +7,15 @@ const { handleIncomingMessage } = require('./message_handler');
 const app = express();
 app.use(express.json());
 
+// Allow browser requests from any origin (needed for Vercel HTTPS → localhost)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
