@@ -318,7 +318,7 @@
     /* ===== MODAL ===== */
     .modal-overlay {
       display: none; position: fixed; inset: 0;
-      background: rgba(44,57,71,0.55); z-index: 100;
+      background: rgba(44,57,71,0.55); z-index: 300;
       align-items: center; justify-content: center;
       backdrop-filter: blur(2px);
     }
@@ -373,8 +373,8 @@
 
     /* ===== SLIDE PANEL ===== */
     #lead-panel {
-      position: fixed; top: 0; right: -520px; width: 500px;
-      height: 100vh; background: var(--card);
+      position: fixed; top: 48px; right: -520px; width: 500px;
+      height: calc(100vh - 48px); background: var(--card);
       border-left: 1px solid var(--border);
       z-index: 50; transition: right 0.3s;
       display: flex; flex-direction: column;

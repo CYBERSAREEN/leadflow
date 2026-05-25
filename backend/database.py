@@ -291,15 +291,19 @@ def get_dashboard_stats() -> dict:
         sb = _get_client()
         today = date.today().isoformat()
 
-        total = len(sb.table("leads").select("id", count="exact").execute().data or [])
-        new_today = len(sb.table("leads").select("id").gte("created_at", today).execute().data or [])
-        contacted = len(sb.table("leads").select("id").eq("status", "contacted").execute().data or [])
-        converted = len(sb.table("leads").select("id").eq("status", "converted").execute().data or [])
-        lost = len(sb.table("leads").select("id").eq("status", "lost").execute().data or [])
-        msgs_today = len(sb.table("messages").select("id").gte("timestamp", today).execute().data or [])
+        # Fetch all leads in one request and compute stats locally
+        all_leads_res = sb.table("leads").select("id,status,source,created_at").execute()
+        all_leads = all_leads_res.data or []
 
-        # Top sources
-        all_leads = sb.table("leads").select("source").execute().data or []
+        total = len(all_leads)
+        new_today = sum(1 for l in all_leads if (l.get("created_at") or "")[:10] == today)
+        contacted = sum(1 for l in all_leads if l.get("status") == "contacted")
+        converted = sum(1 for l in all_leads if l.get("status") == "converted")
+        lost = sum(1 for l in all_leads if l.get("status") == "lost")
+
+        msgs_res = sb.table("messages").select("id").gte("timestamp", today).execute()
+        msgs_today = len(msgs_res.data or [])
+
         source_counts: dict = {}
         for l in all_leads:
             src = l.get("source") or "manual"
@@ -450,17 +454,16 @@ def get_top_scored_leads(limit: int = 5) -> list:
 def search_leads(query: str) -> list:
     try:
         sb = _get_client()
-        # Supabase REST supports ilike
-        name_res = sb.table("leads").select("*").ilike("name", f"%{query}%").limit(100).execute()
-        phone_res = sb.table("leads").select("*").ilike("phone", f"%{query}%").limit(100).execute()
-        seen = set()
-        rows = []
-        for r in (name_res.data or []) + (phone_res.data or []):
-            if r["id"] not in seen:
-                seen.add(r["id"])
-                rows.append(_clean(r))
-        rows.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-        return rows[:100]
+        # Use or_ with ilike for case-insensitive search across name and phone
+        res = (
+            sb.table("leads")
+            .select("*")
+            .or_(f"name.ilike.%{query}%,phone.ilike.%{query}%")
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        )
+        return [_clean(r) for r in (res.data or [])]
     except Exception as e:
         logger.error(f"search_leads error: {e}")
         return []
