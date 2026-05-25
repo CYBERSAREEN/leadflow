@@ -875,6 +875,23 @@ let qrInstance = null;
 let lastQRData = null;
 let qrCountdownInterval = null;
 
+// ── WebSocket endpoint config ──────────────────────────────────────────────
+const RENDER_WS_URL = 'wss://leadflow-backend-pz63.onrender.com/ws';
+const LOCAL_WS_URL  = 'ws://localhost:8000/ws';
+let wsUseLocal    = false;
+let wsRetryCount  = 0;
+const WS_MAX_RETRIES = 2;   // 2 retries × 30 s = ~1 min before local fallback
+
+// ── WhatsApp bridge config ─────────────────────────────────────────────────
+let waLocalMode       = false;  // true → hit localhost:3001 directly
+let waRetries         = 0;
+let waRetryScheduled  = false;
+const WA_MAX_RETRIES  = 2;      // 2 retries × 30 s before local fallback
+
+function waAPIUrl(path) {
+  return waLocalMode ? `http://localhost:3001${path}` : `${API}/api/whatsapp${path}`;
+}
+
 // ===== NAVIGATION =====
 function navigate(page) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -929,19 +946,58 @@ function toggleSidebar() {
 // ===== WEBSOCKET =====
 function connectWebSocket() {
   if (wsConn && wsConn.readyState === WebSocket.OPEN) return;
+
+  const url = wsUseLocal ? LOCAL_WS_URL : RENDER_WS_URL;
+  console.log(`[WS] Connecting to ${url} (attempt ${wsRetryCount + 1}/${WS_MAX_RETRIES + 1}, local=${wsUseLocal})`);
+
   try {
-    wsConn = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-    wsConn.onopen = () => console.log('WebSocket connected');
+    wsConn = new WebSocket(url);
+
+    wsConn.onopen = () => {
+      console.log('[WS] Connected ✓', url);
+      wsRetryCount = 0;
+    };
+
     wsConn.onmessage = (evt) => {
       try {
         const data = JSON.parse(evt.data);
         if (data.type === 'new_message') handleNewMessage(data);
       } catch(e) {}
     };
-    wsConn.onclose = () => setTimeout(connectWebSocket, 5000);
+
+    wsConn.onclose = () => {
+      if (!wsUseLocal) {
+        wsRetryCount++;
+        if (wsRetryCount <= WS_MAX_RETRIES) {
+          console.log(`[WS] Render WS closed — retry ${wsRetryCount}/${WS_MAX_RETRIES} in 30 s`);
+          setTimeout(connectWebSocket, 30000);
+        } else {
+          console.warn('[WS] Render WS unreachable after retries — falling back to local ws://localhost:8000/ws');
+          wsUseLocal = true;
+          wsRetryCount = 0;
+          setTimeout(connectWebSocket, 2000);
+        }
+      } else {
+        // Local mode: just quietly retry every 15 s
+        setTimeout(connectWebSocket, 15000);
+      }
+    };
+
     wsConn.onerror = () => wsConn.close();
+
   } catch(e) {
-    setTimeout(connectWebSocket, 5000);
+    if (!wsUseLocal) {
+      wsRetryCount++;
+      if (wsRetryCount <= WS_MAX_RETRIES) {
+        setTimeout(connectWebSocket, 30000);
+      } else {
+        wsUseLocal = true;
+        wsRetryCount = 0;
+        setTimeout(connectWebSocket, 2000);
+      }
+    } else {
+      setTimeout(connectWebSocket, 15000);
+    }
   }
 }
 
@@ -964,38 +1020,66 @@ function prependMessage(msg, leadName) {
 
 // ===== WHATSAPP STATUS =====
 async function pollWAStatus() {
+  const dot   = document.getElementById('wa-dot');
+  const label = document.getElementById('wa-label');
+  const btn   = document.getElementById('wa-connect-btn');
+
   try {
-    const d = await apiFetch(`${API}/api/whatsapp/status`);
-    const dot = document.getElementById('wa-dot');
-    const label = document.getElementById('wa-label');
-    const btn = document.getElementById('wa-connect-btn');
+    const d = await apiFetch(waAPIUrl('/status'));
+
+    // Successful response — reset retry state
+    waRetries        = 0;
+    waRetryScheduled = false;
+
     if (d.connected) {
       dot.classList.add('connected');
-      label.textContent = d.phone ? `+${d.phone}` : 'Connected';
-      btn.innerHTML = '✓ Connected · Disconnect';
-      btn.style.color = 'var(--success)';
+      label.textContent = (d.phone ? `+${d.phone}` : 'Connected') + (waLocalMode ? ' ⚡' : '');
+      btn.innerHTML       = '✓ Connected · Disconnect';
+      btn.style.color       = 'var(--success)';
       btn.style.borderColor = 'rgba(45,122,79,0.3)';
-      btn.style.background = 'rgba(45,122,79,0.1)';
+      btn.style.background  = 'rgba(45,122,79,0.1)';
       btn.onclick = disconnectWhatsApp;
     } else {
       dot.classList.remove('connected');
-      label.textContent = 'Disconnected';
-      btn.innerHTML = '📱 Connect WhatsApp';
-      btn.style.color = '';
-      btn.style.borderColor = '';
-      btn.style.background = '';
+      label.textContent   = waLocalMode ? '📱 Local — Not Linked' : 'Disconnected';
+      btn.innerHTML       = '📱 Connect WhatsApp';
+      btn.style.color = ''; btn.style.borderColor = ''; btn.style.background = '';
       btn.onclick = openQRModal;
     }
   } catch(e) {
-    document.getElementById('wa-dot').classList.remove('connected');
-    document.getElementById('wa-label').textContent = 'Offline';
+    dot.classList.remove('connected');
+
+    if (!waLocalMode && !waRetryScheduled) {
+      if (waRetries < WA_MAX_RETRIES) {
+        waRetries++;
+        waRetryScheduled = true;
+        label.textContent = `Bridge offline — retry ${waRetries}/${WA_MAX_RETRIES} in 30 s…`;
+        toast(`WhatsApp bridge not reachable — auto-retry ${waRetries}/${WA_MAX_RETRIES} in 30 s`, 'info');
+        setTimeout(() => {
+          waRetryScheduled = false;
+          pollWAStatus();
+        }, 30000);
+      } else {
+        // All retries exhausted — flip to local mode
+        waLocalMode      = true;
+        waRetries        = 0;
+        waRetryScheduled = false;
+        label.textContent = '📱 Local Mode';
+        toast('Bridge unreachable — switched to local mode. Click Connect to scan QR.', 'info');
+        setTimeout(() => openQRModal(), 1200);
+      }
+    } else if (waLocalMode) {
+      label.textContent = 'Local — Offline';
+    } else {
+      label.textContent = 'Offline';
+    }
   }
 }
 
 async function disconnectWhatsApp() {
   if (!confirm('Disconnect WhatsApp? You will need to scan the QR code again to reconnect.')) return;
   try {
-    const d = await apiFetch(`${API}/api/whatsapp/disconnect`, { method: 'POST' });
+    const d = await apiFetch(waAPIUrl('/disconnect'), { method: 'POST' });
     if (d.success) {
       toast('WhatsApp disconnected', 'info');
       pollWAStatus();
@@ -1057,7 +1141,7 @@ async function fetchQR() {
   const wrap = document.getElementById('qr-canvas-wrap');
   const statusEl = document.getElementById('qr-status-text');
   try {
-    const d = await apiFetch(`${API}/api/whatsapp/qr`);
+    const d = await apiFetch(waAPIUrl('/qr'));
     if (d.connected) {
       if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
       if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
@@ -1096,9 +1180,12 @@ async function fetchQR() {
     }
   } catch(e) {
     if (!lastQRData) {
-      wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;">📱 WhatsApp bridge offline<br><small style="margin-top:8px;display:block;line-height:1.6;">The bridge runs as a separate service.<br>Contact your admin to enable it.</small></div>';
+      const modeMsg = waLocalMode
+        ? 'Make sure the local WhatsApp bridge is running on port 3001.'
+        : 'The bridge service may still be starting up — retrying automatically.';
+      wrap.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;">📱 WhatsApp bridge offline<br><small style="margin-top:8px;display:block;line-height:1.6;">${modeMsg}</small></div>`;
     }
-    statusEl.textContent = 'Bridge offline — runs as separate service';
+    statusEl.textContent = waLocalMode ? 'Local bridge offline (port 3001)' : 'Bridge offline — retrying…';
   }
 }
 
