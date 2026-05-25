@@ -4,6 +4,7 @@ import psycopg2
 import psycopg2.extras
 from datetime import date
 from typing import Optional
+from urllib.parse import urlparse, unquote
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,18 @@ def get_connection():
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         raise RuntimeError("DATABASE_URL environment variable is not set")
-    conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Parse manually so %40/@  and %21/! in the password are decoded correctly
+    parsed = urlparse(url)
+    conn = psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        dbname=(parsed.path or "/postgres").lstrip("/"),
+        user=unquote(parsed.username or "postgres"),
+        password=unquote(parsed.password or ""),
+        sslmode="require",
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
     return conn
 
 
