@@ -137,6 +137,7 @@ def get_lead_by_phone(phone: str) -> Optional[dict]:
 
 
 def create_lead(name: str, phone: str, source: str = "manual") -> Optional[dict]:
+    conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -156,11 +157,19 @@ def create_lead(name: str, phone: str, source: str = "manual") -> Optional[dict]
         conn.close()
         return row
     except psycopg2.IntegrityError as e:
-        logger.error(f"create_lead integrity error (duplicate phone?): {e}")
+        # Duplicate phone — expected, return None so caller can handle
+        if conn:
+            try: conn.rollback(); conn.close()
+            except: pass
+        logger.warning(f"create_lead: duplicate phone {phone}: {e}")
         return None
-    except psycopg2.Error as e:
+    except Exception as e:
+        # Re-raise so the route handler can show the real error
+        if conn:
+            try: conn.rollback(); conn.close()
+            except: pass
         logger.error(f"create_lead error: {e}")
-        return None
+        raise
 
 
 def update_lead(lead_id: int, **kwargs) -> Optional[dict]:
