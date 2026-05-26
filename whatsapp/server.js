@@ -1,12 +1,23 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+/**
+ * LeadFlow WhatsApp Bridge — powered by @whiskeysockets/baileys
+ * Memory: ~80MB (vs 400-500MB with Puppeteer/Chromium)
+ */
+
+const {
+  default: makeWASocket,
+  DisconnectReason,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  isJidBroadcast,
+  isJidGroup,
+} = require('@whiskeysockets/baileys');
+const P = require('pino');
 const express = require('express');
 const { handleIncomingMessage } = require('./message_handler');
 
 const app = express();
 app.use(express.json());
 
-// CORS — allow any origin (needed for browser access)
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -15,197 +26,137 @@ app.use((req, res, next) => {
   next();
 });
 
-const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
-const PORT = parseInt(process.env.PORT || '3001', 10);
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'leadflow-bridge-secret-2024';
+const FASTAPI_URL   = process.env.FASTAPI_URL   || 'http://localhost:8000';
+const PORT          = parseInt(process.env.PORT  || '3001', 10);
+const BRIDGE_SECRET = process.env.BRIDGE_SECRET  || 'leadflow-bridge-secret-2024';
+const AUTH_FOLDER   = process.env.AUTH_FOLDER    || './data/baileys_auth';
 
-let isReady = false;
-let currentQR = null;
-let reconnectAttempts = 0;
+let sock           = null;
+let isReady        = false;
+let currentQR      = null;
+let phoneNumber    = null;
 let reconnectTimer = null;
+let reconnectCount = 0;
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
-// Allow max 1 outbound message per 1.5 seconds (WhatsApp rate limit safe zone)
 const sendQueue = [];
 let isSending = false;
 
 async function processSendQueue() {
   if (isSending || sendQueue.length === 0) return;
   isSending = true;
-  const { phone, message, resolve, reject } = sendQueue.shift();
+  const { jid, message, resolve, reject } = sendQueue.shift();
   try {
-    if (!isReady) throw new Error('WhatsApp client not ready');
-    const chatId = phone.includes('@c.us') ? phone : `${phone}@c.us`;
-    await client.sendMessage(chatId, message);
+    if (!sock || !isReady) throw new Error('WhatsApp not connected');
+    await sock.sendMessage(jid, { text: message });
     resolve({ success: true });
   } catch (err) {
     reject(err);
   } finally {
     isSending = false;
-    // Minimum 1.5s between sends to respect WA rate limits
     setTimeout(processSendQueue, 1500);
   }
 }
 
 function queueSend(phone, message) {
   return new Promise((resolve, reject) => {
-    sendQueue.push({ phone, message, resolve, reject });
+    const clean = phone.replace(/[+\s\-]/g,'').replace(/@c\.us|@s\.whatsapp\.net/g,'');
+    sendQueue.push({ jid: `${clean}@s.whatsapp.net`, message, resolve, reject });
     processSendQueue();
   });
 }
 
-// ─── Suppress non-fatal internal WA errors ───────────────────────────────────
-process.on('unhandledRejection', (reason) => {
-  const msg = reason && reason.message ? reason.message : String(reason);
-  const ignore = [
-    'LocalWebCache', 'manifest', 'null', 'Target closed',
-    'Session closed', 'Protocol error', 'Navigation failed',
-  ];
-  if (ignore.some(kw => msg.includes(kw))) {
-    console.warn('[WA] Suppressed internal error (non-fatal):', msg.slice(0, 100));
-  } else {
-    console.error('[WA] Unhandled rejection:', msg);
-  }
-});
-
-// ─── WhatsApp client ──────────────────────────────────────────────────────────
-function createClient() {
-  return new Client({
-    authStrategy: new LocalAuth({ dataPath: './data/.wwebjs_auth' }),
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
-    },
-    puppeteer: {
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--window-size=1280,720',
-        '--memory-pressure-off',
-        '--max-old-space-size=512',
-      ],
-      headless: true,
-      timeout: 90000,
-    },
-  });
-}
-
-let client = createClient();
-registerClientEvents(client);
-
-function registerClientEvents(c) {
-  c.on('qr', (qr) => {
-    currentQR = qr;
-    console.log('\n=== Scan this QR code with WhatsApp ===');
-    qrcode.generate(qr, { small: true });
-    console.log('=======================================\n');
-  });
-
-  c.on('authenticated', () => {
-    console.log('[WA] Authenticated successfully');
-    reconnectAttempts = 0;
-  });
-
-  c.on('auth_failure', (msg) => {
-    console.error('[WA] Auth failed:', msg);
-    scheduleReconnect(5000);
-  });
-
-  c.on('ready', () => {
-    isReady = true;
-    currentQR = null;
-    reconnectAttempts = 0;
-    console.log('[WA] Connected ✓');
-    if (c.info) console.log(`[WA] Logged in as: +${c.info.wid.user}`);
-  });
-
-  c.on('disconnected', (reason) => {
-    isReady = false;
-    console.log('[WA] Disconnected:', reason);
-    scheduleReconnect(10000);
-  });
-
-  c.on('message', async (message) => {
-    if (message.fromMe) return;
-    try {
-      await handleIncomingMessage(message, FASTAPI_URL, BRIDGE_SECRET);
-    } catch (err) {
-      console.error('[WA] Error handling incoming message:', err.message);
-    }
-  });
-}
-
-function scheduleReconnect(delay) {
-  if (reconnectTimer) return; // already scheduled
-  reconnectAttempts++;
-
-  if (reconnectAttempts > 10) {
-    const wait = Math.min(reconnectAttempts * 15000, 300000); // max 5 min
-    console.log(`[WA] Reconnect attempt ${reconnectAttempts} — waiting ${wait / 1000}s...`);
-    reconnectTimer = setTimeout(doReconnect, wait);
-  } else {
-    console.log(`[WA] Reconnect attempt ${reconnectAttempts} in ${delay / 1000}s...`);
-    reconnectTimer = setTimeout(doReconnect, delay);
-  }
-}
-
-async function doReconnect() {
-  reconnectTimer = null;
-  console.log('[WA] Attempting reconnect...');
+// ─── Baileys Socket ───────────────────────────────────────────────────────────
+async function startSocket() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   try {
-    // Destroy old client and create fresh one
-    try { await client.destroy(); } catch (e) {}
-    client = createClient();
-    registerClientEvents(client);
-    await client.initialize();
-    console.log('[WA] Reconnect initialize() called');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
+    const { version } = await fetchLatestBaileysVersion();
+    console.log(`[WA] Baileys ${version.join('.')} | auth: ${AUTH_FOLDER}`);
+
+    sock = makeWASocket({
+      version,
+      auth: state,
+      logger: P({ level: 'silent' }),
+      printQRInTerminal: true,
+      getMessage: async () => undefined,
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false,
+      fireInitQueries: false,
+      emitOwnEvents: false,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      browser: ['LeadFlow CRM', 'Chrome', '124.0'],
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+      if (qr) {
+        currentQR = qr;
+        console.log('[WA] QR ready — scan with WhatsApp');
+      }
+      if (connection === 'open') {
+        isReady = true;
+        currentQR = null;
+        reconnectCount = 0;
+        phoneNumber = sock.user?.id?.split(':')[0] || null;
+        console.log(`[WA] Connected as +${phoneNumber}`);
+      }
+      if (connection === 'close') {
+        isReady = false;
+        phoneNumber = null;
+        const code = lastDisconnect?.error?.output?.statusCode;
+        console.log(`[WA] Closed — code:${code} reason:${lastDisconnect?.error?.message}`);
+        if (code === DisconnectReason.loggedOut) {
+          console.log('[WA] Logged out — restart to re-link');
+          currentQR = null;
+          return;
+        }
+        reconnectCount++;
+        const delay = Math.min(reconnectCount * 8000, 120000);
+        console.log(`[WA] Reconnect #${reconnectCount} in ${delay/1000}s`);
+        reconnectTimer = setTimeout(startSocket, delay);
+      }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+      for (const msg of messages) {
+        if (msg.key.fromMe) continue;
+        const jid = msg.key.remoteJid || '';
+        if (!jid || isJidGroup(jid) || isJidBroadcast(jid) || jid === 'status@broadcast') continue;
+        try {
+          await handleIncomingMessage(msg, FASTAPI_URL, BRIDGE_SECRET);
+        } catch (err) {
+          console.error('[WA] msg handler error:', err.message);
+        }
+      }
+    });
+
   } catch (err) {
-    console.error('[WA] Reconnect failed:', err.message);
-    scheduleReconnect(30000);
+    console.error('[WA] startSocket error:', err.message);
+    reconnectCount++;
+    const delay = Math.min(reconnectCount * 10000, 120000);
+    reconnectTimer = setTimeout(startSocket, delay);
   }
 }
 
 // ─── HTTP API ─────────────────────────────────────────────────────────────────
-
 app.post('/send', async (req, res) => {
   const { phone, message } = req.body;
-
-  if (!phone || !message) {
-    return res.status(400).json({ success: false, error: 'phone and message are required' });
-  }
-
-  if (!isReady) {
-    return res.status(503).json({ success: false, error: 'WhatsApp client not ready — scan QR first' });
-  }
-
+  if (!phone || !message) return res.status(400).json({ success: false, error: 'phone and message required' });
+  if (!isReady) return res.status(503).json({ success: false, error: 'WhatsApp not connected' });
   try {
-    const result = await queueSend(phone, message);
-    res.json(result);
+    res.json(await queueSend(phone, message));
   } catch (err) {
-    console.error('[WA] Send error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 app.get('/status', (req, res) => {
-  const phone = client.info ? client.info.wid.user : null;
-  res.json({
-    connected: isReady || !!phone,
-    phone,
-    reconnectAttempts,
-    queueLength: sendQueue.length,
-  });
+  res.json({ connected: isReady, phone: phoneNumber, queueLength: sendQueue.length });
 });
 
 app.get('/qr', (req, res) => {
@@ -213,73 +164,40 @@ app.get('/qr', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', ready: isReady, uptime: process.uptime() });
+  res.json({ status: 'ok', ready: isReady, memoryMB: Math.round(process.memoryUsage().rss/1024/1024) });
 });
 
 app.post('/disconnect', async (req, res) => {
   try {
-    await client.logout();
-    isReady = false;
-    currentQR = null;
+    if (sock) { await sock.logout(); sock = null; }
+    isReady = false; currentQR = null; phoneNumber = null;
     res.json({ success: true });
   } catch (err) {
-    console.error('[WA] Disconnect error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post('/restart', async (req, res) => {
+app.post('/restart', (req, res) => {
   res.json({ success: true, message: 'Restarting...' });
   setTimeout(async () => {
-    reconnectAttempts = 0;
-    await doReconnect();
-  }, 500);
+    try { if (sock) { await sock.end(); sock = null; } } catch(e) {}
+    isReady = false; reconnectCount = 0;
+    startSocket();
+  }, 300);
 });
-
-// ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`[WA] Bridge server listening on port ${PORT}`);
-  console.log(`[WA] FastAPI URL: ${FASTAPI_URL}`);
+  console.log(`[WA] Bridge on port ${PORT} | FastAPI: ${FASTAPI_URL}`);
 });
 
-// Initialize with retry
-async function initWithRetry(maxAttempts = 5) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`[WA] Initialize attempt ${attempt}/${maxAttempts}...`);
-      await client.initialize();
-      console.log('[WA] initialize() returned');
-      return;
-    } catch (err) {
-      console.error(`[WA] Initialize attempt ${attempt} failed:`, err.message);
-      if (attempt < maxAttempts) {
-        const wait = attempt * 10000;
-        console.log(`[WA] Retrying in ${wait / 1000}s...`);
-        await new Promise(r => setTimeout(r, wait));
-        // Create fresh client
-        try { await client.destroy(); } catch (e) {}
-        client = createClient();
-        registerClientEvents(client);
-      }
-    }
-  }
-  console.error('[WA] All initialize attempts failed — server running but WA disconnected');
-}
+startSocket();
 
-initWithRetry().catch(err => {
-  console.error('[WA] Fatal init error:', err.message);
-});
+process.on('SIGINT',  async () => { try { if(sock) await sock.end(); } catch(e){} process.exit(0); });
+process.on('SIGTERM', async () => { try { if(sock) await sock.end(); } catch(e){} process.exit(0); });
 
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
-process.on('SIGINT', async () => {
-  console.log('[WA] Shutting down...');
-  try { await client.destroy(); } catch (e) {}
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('[WA] SIGTERM received...');
-  try { await client.destroy(); } catch (e) {}
-  process.exit(0);
+process.on('unhandledRejection', (reason) => {
+  const msg = String(reason?.message || reason);
+  const ignore = ['Connection Closed','timed out','ECONNRESET','socket hang up','ENOTFOUND','Timed Out','stream errored'];
+  if (ignore.some(k => msg.includes(k))) console.warn('[WA] Suppressed:', msg.slice(0,80));
+  else console.error('[WA] Unhandled rejection:', msg);
 });

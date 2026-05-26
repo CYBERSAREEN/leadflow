@@ -1,27 +1,19 @@
-FROM node:20-slim
+# Baileys-based WhatsApp bridge — NO Puppeteer/Chromium
+# Memory usage: ~80MB (vs 400-500MB with whatsapp-web.js + Chromium)
+FROM node:20-alpine
 
-# Install Chromium + required libs for Puppeteer
-RUN apt-get update && apt-get install -y \
-    chromium \
-    fonts-noto-color-emoji \
-    fonts-freefont-ttf \
-    ca-certificates \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Tell Puppeteer to use system Chromium, not download its own
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Only need basic deps — no Chromium at all
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --only=production
+COPY package.json ./
+RUN npm install --only=production --legacy-peer-deps
 
 COPY whatsapp ./whatsapp
 
-# Persistent auth session lives here (mount a disk on Render for persistence)
-RUN mkdir -p /app/data/.wwebjs_auth
+# Auth session + data directory
+RUN mkdir -p /app/data/baileys_auth
 
 EXPOSE 3001
 

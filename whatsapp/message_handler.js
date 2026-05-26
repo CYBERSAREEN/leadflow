@@ -1,29 +1,37 @@
+/**
+ * Handles incoming Baileys messages and forwards to FastAPI.
+ */
 const axios = require('axios');
 
-// Rate limiter for inbound processing (avoid hammering FastAPI)
 let lastProcessed = 0;
-const MIN_INTERVAL_MS = 500; // min 500ms between API calls
+const MIN_INTERVAL_MS = 500;
 
 async function handleIncomingMessage(message, fastapiUrl, bridgeSecret) {
-  const rawFrom = message.from || '';
+  const jid = message.key?.remoteJid || '';
 
-  // Skip group messages
-  if (rawFrom.includes('@g.us')) return;
-  // Skip status broadcasts
-  if (rawFrom === 'status@broadcast') return;
-  // Skip if no body
-  if (!message.body && !message.caption) return;
+  // Skip groups, broadcasts, status
+  if (!jid || jid.endsWith('@g.us') || jid === 'status@broadcast') return;
 
-  // Normalize phone — strip @c.us, spaces, dashes, leading +
-  const phone = rawFrom
-    .replace('@c.us', '')
-    .replace('+', '')
-    .replace(/[\s\-]/g, '')
-    .trim();
-
+  // Normalize phone — strip @s.whatsapp.net and non-digits
+  const phone = jid.replace('@s.whatsapp.net', '').replace('+', '').trim();
   if (!phone) return;
 
-  const body = message.body || message.caption || '';
+  // Extract message body from all possible Baileys message types
+  const m = message.message || {};
+  const body = (
+    m.conversation                                    ||
+    m.extendedTextMessage?.text                       ||
+    m.imageMessage?.caption                           ||
+    m.videoMessage?.caption                           ||
+    m.documentMessage?.caption                        ||
+    m.buttonsResponseMessage?.selectedDisplayText     ||
+    m.templateButtonReplyMessage?.selectedDisplayText ||
+    m.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
+    ''
+  ).trim();
+
+  if (!body) return; // skip empty/media-only messages
 
   // Rate limit
   const now = Date.now();
@@ -33,26 +41,21 @@ async function handleIncomingMessage(message, fastapiUrl, bridgeSecret) {
   }
   lastProcessed = Date.now();
 
-  // Get notify name (WhatsApp display name of the sender)
-  let notifyName = null;
-  try {
-    notifyName = message.notifyName || message._data?.notifyName || null;
-  } catch (e) {}
+  // Get sender display name (pushName = WhatsApp display name)
+  const notifyName = message.pushName || null;
 
   const payload = {
     phone,
     body,
-    wa_message_id: message.id ? message.id.id : null,
-    timestamp: message.timestamp || Math.floor(Date.now() / 1000),
+    wa_message_id: message.key?.id || null,
+    timestamp: message.messageTimestamp
+      ? Number(message.messageTimestamp)
+      : Math.floor(Date.now() / 1000),
     notify_name: notifyName,
   };
 
-  const headers = {
-    'Content-Type': 'application/json',
-  };
-  if (bridgeSecret) {
-    headers['X-Bridge-Secret'] = bridgeSecret;
-  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (bridgeSecret) headers['X-Bridge-Secret'] = bridgeSecret;
 
   try {
     const response = await axios.post(
@@ -60,19 +63,18 @@ async function handleIncomingMessage(message, fastapiUrl, bridgeSecret) {
       payload,
       { timeout: 10000, headers }
     );
-    console.log(`[MSG] From +${phone} (${notifyName || 'unknown'}) → lead_id: ${response.data.lead_id}`);
+    console.log(`[MSG] +${phone} (${notifyName || 'unknown'}) → lead_id:${response.data.lead_id}`);
   } catch (err) {
     if (err.response) {
-      console.error(`[MSG] FastAPI ${err.response.status}: ${JSON.stringify(err.response.data)}`);
+      console.error(`[MSG] FastAPI ${err.response.status}:`, JSON.stringify(err.response.data));
     } else if (err.code === 'ECONNREFUSED') {
-      console.error(`[MSG] FastAPI not reachable at ${fastapiUrl} — retrying in 5s`);
-      // Retry once after 5s
+      console.error(`[MSG] FastAPI not reachable — retrying in 5s`);
       await new Promise(r => setTimeout(r, 5000));
       try {
         await axios.post(`${fastapiUrl}/api/messages/inbound`, payload, { timeout: 10000, headers });
-        console.log(`[MSG] Retry succeeded for +${phone}`);
-      } catch (retryErr) {
-        console.error(`[MSG] Retry also failed: ${retryErr.message}`);
+        console.log(`[MSG] Retry OK for +${phone}`);
+      } catch (e2) {
+        console.error(`[MSG] Retry failed: ${e2.message}`);
       }
     } else {
       console.error(`[MSG] Error: ${err.message}`);
