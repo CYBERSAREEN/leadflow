@@ -455,7 +455,30 @@
       flex-shrink: 0; background: var(--card-alt);
       gap: 8px;
     }
-    .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg); }
+    .panel-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg); }
+    .panel-footer {
+      flex-shrink: 0; padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--card);
+    }
+    .panel-footer-row { display: flex; gap: 6px; align-items: flex-end; }
+    .panel-footer-row textarea {
+      flex: 1; resize: none; font-size: 13px; border-radius: 20px;
+      padding: 8px 14px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text);
+      line-height: 1.4; max-height: 100px; overflow-y: auto;
+    }
+    .panel-footer-row textarea:focus { outline: none; border-color: var(--accent); }
+    .btn-send-circle {
+      width: 40px; height: 40px; border-radius: 50%; background: var(--accent);
+      border: none; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.2s; box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+    }
+    .btn-send-circle:disabled { opacity: 0.45; cursor: default; }
+    .btn-send-circle:hover:not(:disabled) { opacity: 0.85; }
+    .panel-footer-actions { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    #reply-suggestion-wrap { margin-bottom: 8px; padding: 10px; background: var(--card-alt); border-radius: 8px; border: 1px solid var(--border); }
     .panel-close {
       background: var(--card); border: 1px solid var(--border); color: var(--text-muted);
       font-size: 15px; cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0;
@@ -891,21 +914,26 @@
       <div class="chat-history" id="panel-chat"></div>
     </div>
 
-    <div class="card" style="padding:14px;">
-      <div class="card-title">Send Message</div>
-      <div id="reply-suggestion-wrap" style="display:none; margin-bottom:10px; padding:10px; background:var(--card-alt); border-radius:8px; border:1px solid var(--border);">
-        <div style="font-size:10px; color:var(--accent); font-weight:700; margin-bottom:4px;">AI Suggestion</div>
-        <div style="font-size:12px; color:var(--text); font-style:italic; margin-bottom:8px; line-height:1.5;" id="reply-suggestion-text"></div>
-        <button class="btn btn-sm btn-ghost" onclick="useSuggestion()">Use This</button>
-      </div>
-      <textarea id="panel-message" rows="3" placeholder="Type a message..."></textarea>
-      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" onclick="suggestReply()" id="btn-suggest">✨ Suggest Reply</button>
-        <button class="btn btn-primary btn-sm" onclick="sendPanelMessage()" id="btn-send-msg">📤 Send via WhatsApp</button>
-      </div>
+  </div><!-- /.panel-body -->
+
+  <!-- STICKY SEND BAR — always visible at bottom like WhatsApp -->
+  <div class="panel-footer">
+    <div id="reply-suggestion-wrap" style="display:none;">
+      <div style="font-size:10px; color:var(--accent); font-weight:700; margin-bottom:4px;">✨ AI Suggestion</div>
+      <div style="font-size:12px; color:var(--text); font-style:italic; margin-bottom:6px; line-height:1.5;" id="reply-suggestion-text"></div>
+      <button class="btn btn-sm btn-ghost" onclick="useSuggestion()">Use This</button>
+    </div>
+    <div class="panel-footer-actions">
+      <button class="btn btn-ghost btn-sm" onclick="suggestReply()" id="btn-suggest">✨ AI Reply</button>
+    </div>
+    <div class="panel-footer-row">
+      <textarea id="panel-message" rows="1" placeholder="Type a message…"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendPanelMessage();}"
+        oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+      <button class="btn-send-circle" onclick="sendPanelMessage()" id="btn-send-msg" title="Send via WhatsApp">➤</button>
     </div>
   </div>
-</div>
+</div><!-- /#lead-panel -->
 
 <!-- ADD LEAD MODAL -->
 <div class="modal-overlay" id="add-lead-modal">
@@ -1615,7 +1643,8 @@ async function openLeadPanel(leadId) {
       if (chatCount) chatCount.textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''}`;
     }
     document.getElementById('reply-suggestion-wrap').style.display = 'none';
-    document.getElementById('panel-message').value = '';
+    const _ta = document.getElementById('panel-message');
+    _ta.value = ''; _ta.style.height = 'auto';
   } catch(e) {
     toast('Failed to load lead details', 'error');
   }
@@ -1719,13 +1748,17 @@ async function suggestReply() {
   } catch(e) {
     toast(`Suggest reply failed: ${e.message}`, 'error');
   } finally {
-    btn.disabled = false; btn.innerHTML = '✨ Suggest Reply';
+    btn.disabled = false; btn.innerHTML = '✨ AI Reply';
   }
 }
 
 function useSuggestion() {
-  document.getElementById('panel-message').value = document.getElementById('reply-suggestion-text').textContent;
+  const ta = document.getElementById('panel-message');
+  ta.value = document.getElementById('reply-suggestion-text').textContent;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
   document.getElementById('reply-suggestion-wrap').style.display = 'none';
+  ta.focus();
 }
 
 async function sendPanelMessage() {
@@ -1758,13 +1791,14 @@ async function sendPanelMessage() {
       });
     }
     toast('Message sent ✓', 'success');
-    document.getElementById('panel-message').value = '';
+    const _msgTa = document.getElementById('panel-message');
+    _msgTa.value = ''; _msgTa.style.height = 'auto';
     // Refresh chat
     openLeadPanel(currentLeadId);
   } catch(e) {
     toast(`Send failed: ${e.message}`, 'error');
   } finally {
-    btn.disabled = false; btn.innerHTML = '📤 Send via WhatsApp';
+    btn.disabled = false; btn.innerHTML = '➤';
   }
 }
 
