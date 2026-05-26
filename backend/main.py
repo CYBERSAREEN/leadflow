@@ -62,6 +62,64 @@ async def health():
     return {"status": "ok", "version": "2.0.0"}
 
 
+@app.post("/setup-db")
+async def setup_db():
+    """
+    One-time bootstrap: create tables + default user via psycopg2.
+    Safe to call multiple times (idempotent). No auth required.
+    """
+    import os, psycopg2
+    from urllib.parse import urlparse, unquote
+    from backend.auth import get_password_hash
+
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        return {"ok": False, "error": "DATABASE_URL not set"}
+
+    results = []
+    try:
+        parsed = urlparse(db_url)
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            dbname=(parsed.path or "/postgres").lstrip("/"),
+            user=unquote(parsed.username or "postgres"),
+            password=unquote(parsed.password or ""),
+            sslmode="require",
+            connect_timeout=15,
+        )
+        cur = conn.cursor()
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        results.append("users table: ok")
+
+        cur.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        results.append("leads.user_id: ok")
+
+        cur.execute("ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        results.append("daily_reports.user_id: ok")
+
+        hashed = get_password_hash("Vedant@1234")
+        cur.execute(
+            "INSERT INTO users (username, password_hash) VALUES (%s, %s) ON CONFLICT (username) DO NOTHING",
+            ("vedant", hashed)
+        )
+        results.append("user vedant: inserted (or already exists)")
+
+        conn.commit()
+        conn.close()
+        return {"ok": True, "results": results, "message": "Setup complete! You can now login with vedant / Vedant@1234"}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "results": results}
+
+
 from backend.routes import leads, messages, analytics, ai, auth as auth_routes
 from backend.services import whatsapp_bridge
 
