@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
-from backend import database
+from backend import database, auth
 from backend.models import LeadCreate, LeadUpdate, SendMessageRequest
 from backend.services import groq_service, whatsapp_bridge
 
@@ -16,14 +16,16 @@ async def get_leads(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None),
+    current_user: dict = Depends(auth.get_current_user),
 ):
     try:
+        user_id = current_user["user_id"]
         if search:
-            leads = database.search_leads(search)
+            leads = database.search_leads(search, user_id=user_id)
             if status:
                 leads = [l for l in leads if l["status"] == status]
             return {"leads": leads, "total": len(leads)}
-        leads = database.get_all_leads(status=status, limit=limit, offset=offset)
+        leads = database.get_all_leads(status=status, limit=limit, offset=offset, user_id=user_id)
         return {"leads": leads, "total": len(leads)}
     except Exception as e:
         logger.error(f"GET /leads error: {e}")
@@ -31,9 +33,9 @@ async def get_leads(
 
 
 @router.get("/leads/{lead_id}")
-async def get_lead(lead_id: int):
+async def get_lead(lead_id: int, current_user: dict = Depends(auth.get_current_user)):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        lead = database.get_lead_by_id(lead_id, user_id=current_user["user_id"])
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
         return lead
@@ -45,12 +47,14 @@ async def get_lead(lead_id: int):
 
 
 @router.post("/leads", status_code=201)
-async def create_lead(body: LeadCreate):
+async def create_lead(body: LeadCreate, current_user: dict = Depends(auth.get_current_user)):
     try:
-        existing = database.get_lead_by_phone(body.phone)
+        user_id = current_user["user_id"]
+        # Check if this phone already exists for THIS user
+        existing = database.get_lead_by_phone(body.phone, user_id=user_id)
         if existing:
             raise HTTPException(status_code=409, detail="Lead with this phone number already exists")
-        lead = database.create_lead(name=body.name, phone=body.phone, source=body.source)
+        lead = database.create_lead(name=body.name, phone=body.phone, source=body.source, user_id=user_id)
         if not lead:
             raise HTTPException(status_code=500, detail="Failed to create lead")
         return lead
@@ -62,15 +66,16 @@ async def create_lead(body: LeadCreate):
 
 
 @router.put("/leads/{lead_id}")
-async def update_lead(lead_id: int, body: LeadUpdate):
+async def update_lead(lead_id: int, body: LeadUpdate, current_user: dict = Depends(auth.get_current_user)):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        user_id = current_user["user_id"]
+        lead = database.get_lead_by_id(lead_id, user_id=user_id)
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
         update_data = {k: v for k, v in body.model_dump().items() if v is not None}
         if not update_data:
             return lead
-        updated = database.update_lead(lead_id, **update_data)
+        updated = database.update_lead(lead_id, user_id=user_id, **update_data)
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update lead")
         return updated
@@ -82,12 +87,13 @@ async def update_lead(lead_id: int, body: LeadUpdate):
 
 
 @router.delete("/leads/{lead_id}")
-async def delete_lead(lead_id: int):
+async def delete_lead(lead_id: int, current_user: dict = Depends(auth.get_current_user)):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        user_id = current_user["user_id"]
+        lead = database.get_lead_by_id(lead_id, user_id=user_id)
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
-        success = database.delete_lead(lead_id)
+        success = database.delete_lead(lead_id, user_id=user_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete lead")
         return {"message": "Lead deleted successfully"}
@@ -99,9 +105,9 @@ async def delete_lead(lead_id: int):
 
 
 @router.post("/leads/{lead_id}/score")
-async def score_lead(lead_id: int):
+async def score_lead(lead_id: int, current_user: dict = Depends(auth.get_current_user)):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        lead = database.get_lead_by_id(lead_id, user_id=current_user["user_id"])
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -112,6 +118,7 @@ async def score_lead(lead_id: int):
 
         database.update_lead(
             lead_id,
+            user_id=current_user["user_id"],
             ai_score=result["score"],
             ai_summary=f"{result['reason']} | Action: {result['suggested_action']}"
         )
@@ -131,9 +138,9 @@ async def score_lead(lead_id: int):
 
 
 @router.get("/leads/{lead_id}/messages")
-async def get_lead_messages(lead_id: int):
+async def get_lead_messages(lead_id: int, current_user: dict = Depends(auth.get_current_user)):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        lead = database.get_lead_by_id(lead_id, user_id=current_user["user_id"])
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
         messages = database.get_messages_for_lead(lead_id)
@@ -146,9 +153,13 @@ async def get_lead_messages(lead_id: int):
 
 
 @router.post("/leads/{lead_id}/send-message")
-async def send_message_to_lead(lead_id: int, body: SendMessageRequest):
+async def send_message_to_lead(
+    lead_id: int,
+    body: SendMessageRequest,
+    current_user: dict = Depends(auth.get_current_user),
+):
     try:
-        lead = database.get_lead_by_id(lead_id)
+        lead = database.get_lead_by_id(lead_id, user_id=current_user["user_id"])
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -156,7 +167,8 @@ async def send_message_to_lead(lead_id: int, body: SendMessageRequest):
 
         if success:
             database.save_message(lead["phone"], "outbound", body.message)
-            database.update_lead(lead_id, last_contacted=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            database.update_lead(lead_id, user_id=current_user["user_id"],
+                                 last_contacted=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             return {"success": True, "message": "Message sent successfully"}
         else:
             raise HTTPException(status_code=503, detail="WhatsApp bridge unavailable — message not sent")

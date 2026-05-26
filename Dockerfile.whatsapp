@@ -1,0 +1,28 @@
+FROM node:20-slim
+
+# Install Chromium + required libs for Puppeteer
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-noto-color-emoji \
+    fonts-freefont-ttf \
+    ca-certificates \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tell Puppeteer to use system Chromium, not download its own
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
+
+COPY whatsapp ./whatsapp
+
+# Persistent auth session lives here (mount a disk on Render for persistence)
+RUN mkdir -p /app/data/.wwebjs_auth
+
+EXPOSE 3001
+
+CMD ["node", "whatsapp/server.js"]

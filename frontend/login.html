@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeadFlow AI — Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #F4F7FA;
+      --card: #FFFFFF;
+      --accent: #547A95;
+      --highlight: #C2A56D;
+      --sidebar-bg: #2C3947;
+      --text: #2C3947;
+      --text-muted: #547A95;
+      --border: #E8EDF2;
+      --danger: #c62828;
+      --shadow-md: 0 8px 40px rgba(44,57,71,0.14);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .login-box {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .brand-icon {
+      width: 44px; height: 44px;
+      background: var(--highlight);
+      border-radius: 11px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 800; color: #fff;
+    }
+    .brand-text { font-size: 22px; font-weight: 700; color: var(--sidebar-bg); }
+    .brand-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    h2 {
+      font-size: 20px; font-weight: 700; color: var(--text);
+      margin-bottom: 6px;
+    }
+    .subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 28px; }
+
+    .form-group { margin-bottom: 18px; }
+    label {
+      display: block;
+      font-size: 11px; font-weight: 700;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      background: var(--card);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(84,122,149,0.12);
+    }
+
+    .btn-login {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-login:hover { opacity: 0.88; }
+    .btn-login:active { transform: scale(0.98); }
+    .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      display: none;
+      background: #fff5f5;
+      border: 1px solid #f5b7b7;
+      color: #9b1c1c;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .error-msg.show { display: block; }
+
+    .back-link {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .back-link a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .back-link a:hover { text-decoration: underline; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 480px) {
+      .login-box { padding: 28px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-box">
+  <div class="brand">
+    <div class="brand-icon">LF</div>
+    <div>
+      <div class="brand-text">LeadFlow AI</div>
+      <div class="brand-sub">CRM Dashboard</div>
+    </div>
+  </div>
+
+  <h2>Sign in</h2>
+  <p class="subtitle">Enter your credentials to access your leads</p>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <form onsubmit="doLogin(event)">
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="vedant" autocomplete="username" required />
+    </div>
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required />
+    </div>
+    <button class="btn-login" type="submit" id="btn-login">
+      Sign In
+    </button>
+  </form>
+
+  <div class="back-link">
+    <a href="/landing.html">← Back to home</a>
+  </div>
+</div>
+
+<script>
+const API = window.LEADFLOW_API || '';
+
+// If already logged in, redirect
+const existingToken = localStorage.getItem('lf_token');
+if (existingToken) {
+  // Verify token is still valid
+  fetch(`${API}/api/auth/me`, {
+    headers: { 'Authorization': `Bearer ${existingToken}` }
+  }).then(r => {
+    if (r.ok) window.location.href = '/index.html';
+  }).catch(() => {});
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('btn-login');
+  const err = document.getElementById('error-msg');
+
+  if (!username || !password) {
+    showError('Please enter username and password');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Signing in...';
+  err.classList.remove('show');
+
+  try {
+    const res = await fetch(`${API}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(data.detail || 'Login failed');
+      return;
+    }
+    // Store token and user info
+    localStorage.setItem('lf_token', data.access_token);
+    localStorage.setItem('lf_username', data.username);
+    // Redirect to dashboard
+    window.location.href = '/index.html';
+  } catch (ex) {
+    showError('Connection error — check if backend is running');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Sign In';
+  }
+}
+
+function showError(msg) {
+  const err = document.getElementById('error-msg');
+  err.textContent = msg;
+  err.classList.add('show');
+}
+
+document.getElementById('username').focus();
+</script>
+</body>
+</html>

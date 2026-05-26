@@ -1,8 +1,9 @@
+import os
 import httpx
 import logging
 
 logger = logging.getLogger(__name__)
-WA_SERVER_URL = "http://localhost:3001"
+WA_SERVER_URL = os.environ.get("WA_SERVER_URL", "http://localhost:3001")
 
 
 async def send_message(phone: str, message: str) -> bool:

@@ -19,6 +19,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database init failed: {e}")
 
+    # Ensure default user exists (REST fallback for IPv6-only Supabase)
+    try:
+        from backend import database
+        database.ensure_default_user()
+        logger.info("Default user check done")
+    except Exception as e:
+        logger.error(f"Default user check failed (non-fatal): {e}")
+
     try:
         from backend.services.scheduler import start_scheduler
         start_scheduler()
@@ -38,7 +46,7 @@ async def lifespan(app: FastAPI):
     logger.info("LeadFlow AI stopped")
 
 
-app = FastAPI(title="LeadFlow AI", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="LeadFlow AI", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,12 +59,13 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.0.0"}
 
 
-from backend.routes import leads, messages, analytics, ai
+from backend.routes import leads, messages, analytics, ai, auth as auth_routes
 from backend.services import whatsapp_bridge
 
+app.include_router(auth_routes.router, prefix="/api")
 app.include_router(leads.router, prefix="/api")
 app.include_router(messages.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
