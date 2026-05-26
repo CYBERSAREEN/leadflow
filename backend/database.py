@@ -213,6 +213,9 @@ def create_user(username: str, password_hash: str) -> Optional[dict]:
         logger.error(f"create_user error: {e}")
         raise
 
+# ──────────────────────────────────────────────────────────────────────────
+# LEADS
+# ──────────────────────────────────────────────────────────────────────────
 
 def ensure_default_user():
     """Create default vedant user via REST if not exists (Supabase fallback)."""

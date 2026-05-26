@@ -1172,6 +1172,7 @@ function connectWebSocket() {
     };
 
     wsConn.onerror = () => wsConn.close();
+
   } catch(e) {
     setTimeout(connectWebSocket, 15000);
   }
@@ -2024,6 +2025,11 @@ window.addEventListener('DOMContentLoaded', () => {
   pollWAStatus();
   setInterval(pollWAStatus, 10000);
   connectWebSocket();
+  // Keep Render services warm — ping every 4 min to prevent 15-min spin-down
+  setInterval(() => {
+    fetch(`${API}/api/health`).catch(() => {});
+    if (!waLocalMode) fetch('/api/whatsapp/status').catch(() => {});
+  }, 240000);
 
   // Keep Render warm — ping every 4 min
   setInterval(() => {
