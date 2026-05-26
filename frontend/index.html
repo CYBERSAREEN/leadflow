@@ -457,9 +457,10 @@
     }
     .panel-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--bg); }
     .panel-footer {
-      flex-shrink: 0; padding: 12px 14px;
+      flex-shrink: 0; padding: 10px 12px;
       border-top: 1px solid var(--border);
       background: var(--card);
+      position: sticky; bottom: 0; z-index: 5;
     }
     .panel-footer-row { display: flex; gap: 6px; align-items: flex-end; }
     .panel-footer-row textarea {
@@ -478,7 +479,7 @@
     .btn-send-circle:disabled { opacity: 0.45; cursor: default; }
     .btn-send-circle:hover:not(:disabled) { opacity: 0.85; }
     .panel-footer-actions { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-    #reply-suggestion-wrap { margin-bottom: 8px; padding: 10px; background: var(--card-alt); border-radius: 8px; border: 1px solid var(--border); }
+    #reply-suggestion-wrap { margin-bottom: 8px; padding: 10px; background: var(--card-alt); border-radius: 8px; border: 1px solid var(--border); max-height: 140px; overflow-y: auto; }
     .panel-close {
       background: var(--card); border: 1px solid var(--border); color: var(--text-muted);
       font-size: 15px; cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0;
@@ -486,7 +487,7 @@
     .panel-close:hover { color: var(--text); }
 
     /* ===== CHAT BUBBLES ===== */
-    .chat-history { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding: 4px; scroll-behavior: smooth; }
+    .chat-history { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 4px; scroll-behavior: smooth; min-height: 80px; max-height: calc(100vh - 420px); }
     .bubble-wrap { display: flex; }
     .bubble-wrap.inbound { justify-content: flex-start; }
     .bubble-wrap.outbound { justify-content: flex-end; }
@@ -599,6 +600,30 @@
     .panel-name-display.hide { display: none; }
     .rename-input-wrap input { flex: 1; padding: 5px 10px; font-size: 14px; font-weight: 600; }
 
+    /* ===== WA MODE CARDS ===== */
+    .wa-section-label { font-size: 9px; font-weight: 700; color: var(--sidebar-mut); text-transform: uppercase; letter-spacing: 0.07em; padding: 4px 2px 5px; }
+    .wa-mode-card {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 8px; border-radius: 7px; cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s, border-color 0.15s;
+      margin-bottom: 3px; user-select: none;
+    }
+    .wa-mode-card:hover { background: rgba(255,255,255,0.06); }
+    .wa-mode-card.active { background: rgba(194,165,109,0.12); border-color: rgba(194,165,109,0.3); }
+    .wa-mode-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #4a5568; transition: background 0.3s; }
+    .wa-mode-dot.up { background: #4ade80; }
+    .wa-mode-dot.down { background: #c62828; }
+    .wa-mode-dot.unknown { background: #C2A56D; animation: pulse-dot 1.5s ease-in-out infinite; }
+    @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
+    .wa-mode-info { flex: 1; min-width: 0; }
+    .wa-mode-name { font-size: 11px; font-weight: 600; color: var(--sidebar-txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wa-mode-status { font-size: 9px; color: var(--sidebar-mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+    .wa-mode-check { font-size: 11px; color: var(--highlight); flex-shrink: 0; font-weight: 700; }
+    #sidebar.collapsed .wa-section-label,
+    #sidebar.collapsed .wa-mode-info,
+    #sidebar.collapsed .wa-mode-check { display: none; }
+
     /* ===== RESPONSIVE ===== */
     @media (max-width: 1200px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -622,8 +647,8 @@
       #sidebar.mobile-open {
         transform: translateX(0);
       }
-      #sidebar .logo-text, #sidebar .nav-label, #sidebar .wa-label, #sidebar .wa-connect-btn, #sidebar #wa-mode-row { display: flex !important; }
-      #sidebar .wa-label { display: block !important; }
+      #sidebar .logo-text, #sidebar .nav-label { display: flex !important; }
+      #sidebar .wa-mode-info, #sidebar .wa-mode-name, #sidebar .wa-section-label { display: block !important; }
       .hamburger-btn { display: flex; }
       #main { width: 100%; }
     }
@@ -696,19 +721,36 @@
     </div>
   </nav>
   <div class="sidebar-footer">
-    <div class="wa-status">
-      <div class="wa-dot" id="wa-dot"></div>
-      <span class="wa-label" id="wa-label">Disconnected</span>
+    <div class="wa-section-label">WhatsApp</div>
+
+    <!-- Meta Cloud API -->
+    <div class="wa-mode-card" id="wa-card-meta" onclick="selectWAMode('meta')" title="Meta Cloud API — Official Business API">
+      <div class="wa-mode-dot unknown" id="wa-dot-meta"></div>
+      <div class="wa-mode-info">
+        <div class="wa-mode-name">☁️ Meta API</div>
+        <div class="wa-mode-status" id="wa-status-meta">Checking…</div>
+      </div>
+      <div class="wa-mode-check" id="wa-check-meta"></div>
     </div>
-    <button class="wa-connect-btn" id="wa-connect-btn">📱 Connect WhatsApp</button>
-    <div id="wa-mode-row">
-      <span>Bridge:</span>
-      <button id="btn-mode-render" class="wa-mode-btn"
-        style="background:rgba(84,122,149,0.15);color:var(--sidebar-txt);border-color:rgba(84,122,149,0.4);"
-        onclick="setWAMode(false)">☁ Render</button>
-      <button id="btn-mode-local" class="wa-mode-btn"
-        style="background:transparent;color:var(--sidebar-mut);border-color:rgba(255,255,255,0.1);"
-        onclick="setWAMode(true)">💻 Local</button>
+
+    <!-- Render/Remote QR Bridge -->
+    <div class="wa-mode-card" id="wa-card-render" onclick="selectWAMode('render')" title="Render-hosted Baileys bridge — scan QR">
+      <div class="wa-mode-dot unknown" id="wa-dot-render"></div>
+      <div class="wa-mode-info">
+        <div class="wa-mode-name">🌐 Render QR</div>
+        <div class="wa-mode-status" id="wa-status-render">Click to check</div>
+      </div>
+      <div class="wa-mode-check" id="wa-check-render"></div>
+    </div>
+
+    <!-- Local Bridge -->
+    <div class="wa-mode-card" id="wa-card-local" onclick="selectWAMode('local')" title="Local Baileys bridge on localhost:3001">
+      <div class="wa-mode-dot unknown" id="wa-dot-local"></div>
+      <div class="wa-mode-info">
+        <div class="wa-mode-name">💻 Local QR</div>
+        <div class="wa-mode-status" id="wa-status-local">Checking…</div>
+      </div>
+      <div class="wa-mode-check" id="wa-check-local"></div>
     </div>
   </div>
 </aside>
@@ -979,13 +1021,12 @@
       Open WhatsApp → Linked Devices → Link a Device
     </p>
     <div id="qr-canvas-wrap"></div>
-    <p class="qr-status-text" id="qr-status-text">Loading QR code...</p>
+    <p class="qr-status-text" id="qr-status-text">Loading QR code…</p>
     <div class="qr-countdown-bar" id="qr-countdown-bar" style="display:none;">
       <div class="qr-countdown-fill" id="qr-countdown-fill"></div>
     </div>
     <div id="qr-actions" style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="refreshQRManual()" style="width:100%;">🔄 Refresh QR</button>
-      <button class="btn btn-ghost btn-sm" id="qr-local-btn" onclick="switchToLocalQR()" style="width:100%; font-size:11px; opacity:0.7;">💻 Use Local Bridge (localhost:3001)</button>
     </div>
   </div>
 </div>
@@ -1068,15 +1109,16 @@ let qrPollInterval = null;
 let qrInstance = null;
 let lastQRData = null;
 let qrCountdownInterval = null;
-let qrFallbackTimer = null;
 let currentPage = 'dashboard';
 let wsUseLocal = false;
 let wsRetryCount = 0;
 const WS_MAX_RETRIES = 2;
-let waLocalMode = false;
-let waRetries = 0;
-let waRetryScheduled = false;
-const WA_MAX_RETRIES = 2;
+
+// ── WhatsApp multi-mode state ──────────────────────────────────────────────
+let activeWAMode = 'meta';   // 'meta' | 'render' | 'local'
+const RENDER_BRIDGE_URL = 'https://leadflow-backend-pz63.onrender.com'; // Render Baileys bridge base URL
+const LOCAL_BRIDGE_URL  = 'http://localhost:3001';
+let waAvailability = { meta: null, render: null, local: null };
 
 // ─── MOBILE SIDEBAR ────────────────────────────────────────────────────────────
 function openMobileSidebar() {
@@ -1097,28 +1139,96 @@ function toggleSidebar() {
   }
 }
 
-// ─── WA MODE ──────────────────────────────────────────────────────────────────
-function waAPIUrl(path) {
-  return waLocalMode ? `http://localhost:3001${path}` : `${API}/api/whatsapp${path}`;
+// ─── WHATSAPP MULTI-MODE SYSTEM ───────────────────────────────────────────────
+
+function _setModeDot(mode, state) {  // state: 'up'|'down'|'unknown'
+  const el = document.getElementById(`wa-dot-${mode}`);
+  if (el) { el.className = `wa-mode-dot ${state}`; }
+}
+function _setModeStatus(mode, text) {
+  const el = document.getElementById(`wa-status-${mode}`);
+  if (el) el.textContent = text;
+}
+function _setModeCheck(mode, show) {
+  const el = document.getElementById(`wa-check-${mode}`);
+  if (el) el.textContent = show ? '✓' : '';
 }
 
-function setWAMode(local) {
-  waLocalMode = local;
-  waRetries = 0;
-  waRetryScheduled = false;
-  const rb = document.getElementById('btn-mode-render');
-  const lb = document.getElementById('btn-mode-local');
-  if (rb && lb) {
-    rb.style.background = local ? 'transparent' : 'rgba(84,122,149,0.15)';
-    rb.style.color = local ? 'var(--sidebar-mut)' : 'var(--sidebar-txt)';
-    rb.style.borderColor = local ? 'rgba(255,255,255,0.1)' : 'rgba(84,122,149,0.4)';
-    lb.style.background = local ? 'rgba(194,165,109,0.2)' : 'transparent';
-    lb.style.color = local ? '#C2A56D' : 'var(--sidebar-mut)';
-    lb.style.borderColor = local ? 'rgba(194,165,109,0.5)' : 'rgba(255,255,255,0.1)';
+// Auto-detect all 3 modes in parallel on load
+async function checkAllWAModes() {
+  await Promise.allSettled([checkMetaAPI(), checkLocalBridge(), checkRenderBridge()]);
+  // Auto-select best available: Meta > Local > Render
+  if (waAvailability.meta)        selectWAMode('meta',   false);
+  else if (waAvailability.local)  selectWAMode('local',  false);
+  else                            selectWAMode('render',  false);
+}
+
+async function checkMetaAPI() {
+  try {
+    const d = await apiFetch(`${API}/api/whatsapp/status`);
+    const ok = d.connected && d.mode === 'cloud_api';
+    waAvailability.meta = ok;
+    _setModeDot('meta', ok ? 'up' : 'down');
+    _setModeStatus('meta', ok ? (d.phone || 'Connected') : (d.error || 'Token error'));
+  } catch(e) {
+    waAvailability.meta = false;
+    _setModeDot('meta', 'down');
+    _setModeStatus('meta', 'Offline');
   }
-  document.getElementById('wa-label').textContent = local ? '📱 Local Mode' : 'Disconnected';
-  toast(local ? 'Switched to local bridge (localhost:3001)' : 'Switched to Render bridge', 'info');
-  pollWAStatus();
+}
+
+async function checkLocalBridge() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const r = await fetch(`${LOCAL_BRIDGE_URL}/status`, { signal: ctrl.signal });
+    clearTimeout(t);
+    const d = await r.json();
+    waAvailability.local = d.connected;
+    _setModeDot('local', d.connected ? 'up' : 'down');
+    _setModeStatus('local', d.connected ? 'Linked ✓' : 'Running — scan QR');
+  } catch(e) {
+    waAvailability.local = false;
+    _setModeDot('local', 'down');
+    _setModeStatus('local', 'Not running');
+  }
+}
+
+async function checkRenderBridge() {
+  // Render bridge availability is tested via backend /api/whatsapp/qr
+  // We can't directly hit Render bridge from browser (CORS)
+  // Mark as unknown until user clicks it
+  _setModeDot('render', 'unknown');
+  _setModeStatus('render', 'Click to connect');
+}
+
+function selectWAMode(mode, showToast = true) {
+  activeWAMode = mode;
+  document.querySelectorAll('.wa-mode-card').forEach(c => {
+    c.classList.remove('active');
+    const m = c.id.replace('wa-card-', '');
+    _setModeCheck(m, false);
+  });
+  const card = document.getElementById(`wa-card-${mode}`);
+  if (card) card.classList.add('active');
+  _setModeCheck(mode, true);
+
+  if (showToast) {
+    const labels = { meta: '☁️ Meta Cloud API', render: '🌐 Render QR Bridge', local: '💻 Local Bridge' };
+    toast(`Switched to ${labels[mode]}`, 'info');
+  }
+
+  // For QR-based modes, open QR modal if not yet connected
+  if (mode === 'render') {
+    openQRModal('render');
+  } else if (mode === 'local' && !waAvailability.local) {
+    openQRModal('local');
+  }
+}
+
+// Legacy poll — now just re-checks Meta + local silently
+async function pollWAStatus() {
+  await Promise.allSettled([checkMetaAPI(), checkLocalBridge()]);
 }
 
 // ─── NAVIGATION ───────────────────────────────────────────────────────────────
@@ -1257,95 +1367,29 @@ function prependMessage(msg, leadName) {
   timeline.insertBefore(item, timeline.firstChild);
 }
 
-// ─── WHATSAPP STATUS ──────────────────────────────────────────────────────────
-async function pollWAStatus() {
-  const dot   = document.getElementById('wa-dot');
-  const label = document.getElementById('wa-label');
-  const btn   = document.getElementById('wa-connect-btn');
-  try {
-    const d = await apiFetch(waAPIUrl('/status'));
-    waRetries = 0; waRetryScheduled = false;
-    if (d.connected) {
-      dot.classList.add('connected');
-      label.textContent = (d.phone ? `+${d.phone}` : 'Connected') + (waLocalMode ? ' ⚡' : '');
-      btn.innerHTML = '✓ Connected · Disconnect';
-      btn.style.cssText = 'color:var(--success);border-color:rgba(45,122,79,0.3);background:rgba(45,122,79,0.1);';
-      btn.onclick = disconnectWhatsApp;
-    } else {
-      dot.classList.remove('connected');
-      label.textContent = waLocalMode ? '📱 Local — Not Linked' : 'Disconnected';
-      btn.innerHTML = '📱 Connect WhatsApp';
-      btn.style.cssText = '';
-      btn.onclick = openQRModal;
-    }
-  } catch(e) {
-    dot.classList.remove('connected');
-    if (!waLocalMode && !waRetryScheduled) {
-      if (waRetries < WA_MAX_RETRIES) {
-        waRetries++;
-        waRetryScheduled = true;
-        label.textContent = `Bridge offline — retry ${waRetries}/${WA_MAX_RETRIES}…`;
-        setTimeout(() => { waRetryScheduled = false; pollWAStatus(); }, 30000);
-      } else {
-        waLocalMode = true; waRetries = 0; waRetryScheduled = false;
-        label.textContent = '📱 Local Mode';
-        toast('Bridge unreachable — switched to local mode', 'info');
-        setTimeout(() => openQRModal(), 1200);
-      }
-    } else if (waLocalMode) {
-      label.textContent = 'Local — Offline';
-    } else {
-      label.textContent = 'Offline';
-    }
-  }
-}
+// ─── QR CODE MODAL ────────────────────────────────────────────────────────────
+let _qrMode = 'render'; // which bridge is driving the current QR modal
 
-async function disconnectWhatsApp() {
-  if (!confirm('Disconnect WhatsApp? You\'ll need to scan QR again to reconnect.')) return;
-  try {
-    const d = await apiFetch(waAPIUrl('/disconnect'), { method: 'POST' });
-    if (d.success) { toast('WhatsApp disconnected', 'info'); pollWAStatus(); }
-    else toast(`Disconnect failed: ${d.error || 'unknown'}`, 'error');
-  } catch(e) { toast('Failed to disconnect', 'error'); }
-}
-
-// ─── QR CODE ──────────────────────────────────────────────────────────────────
-function openQRModal() {
+function openQRModal(mode) {
+  _qrMode = mode || activeWAMode;
   lastQRData = null;
   document.getElementById('qr-canvas-wrap').innerHTML = '<div class="loading-center" style="padding:40px;"><div class="spinner"></div></div>';
-  document.getElementById('qr-status-text').textContent = 'Loading QR code...';
+  document.getElementById('qr-status-text').textContent = 'Loading QR code…';
   document.getElementById('qr-countdown-bar').style.display = 'none';
   document.getElementById('qr-instructions').style.display = '';
   document.getElementById('qr-actions').style.display = '';
-  document.getElementById('qr-modal-title').textContent = waLocalMode ? '📱 Connect WhatsApp (Local)' : 'Connect WhatsApp';
-  const lb = document.getElementById('qr-local-btn');
-  if (lb) lb.style.display = waLocalMode ? 'none' : '';
+  document.getElementById('qr-modal-title').textContent =
+    _qrMode === 'local' ? '💻 Connect — Local Bridge' : '🌐 Connect — Render Bridge';
   document.getElementById('qr-modal').classList.add('open');
   fetchQR();
   if (qrPollInterval) clearInterval(qrPollInterval);
   qrPollInterval = setInterval(fetchQR, 3000);
-  if (!waLocalMode) {
-    if (qrFallbackTimer) clearTimeout(qrFallbackTimer);
-    qrFallbackTimer = setTimeout(() => {
-      if (!waLocalMode && !lastQRData) switchToLocalQR();
-    }, 60000);
-  }
 }
 
 function closeQRModal() {
   document.getElementById('qr-modal').classList.remove('open');
   if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
   if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
-  if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
-}
-
-function switchToLocalQR() {
-  if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
-  waLocalMode = true; waRetries = 0; waRetryScheduled = false;
-  toast('Switching to local bridge (localhost:3001)', 'info');
-  document.getElementById('wa-label').textContent = '📱 Local Mode';
-  closeQRModal();
-  setTimeout(() => openQRModal(), 400);
 }
 
 function startQRCountdown(seconds) {
@@ -1363,7 +1407,13 @@ async function fetchQR() {
   const wrap = document.getElementById('qr-canvas-wrap');
   const statusEl = document.getElementById('qr-status-text');
   try {
-    const d = await apiFetch(waAPIUrl('/qr'));
+    let d;
+    if (_qrMode === 'local') {
+      const r = await fetch(`${LOCAL_BRIDGE_URL}/qr`);
+      d = await r.json();
+    } else {
+      d = await apiFetch(`${API}/api/whatsapp/qr`);
+    }
     if (d.connected) {
       if (qrPollInterval) { clearInterval(qrPollInterval); qrPollInterval = null; }
       if (qrCountdownInterval) { clearInterval(qrCountdownInterval); qrCountdownInterval = null; }
@@ -1376,9 +1426,15 @@ async function fetchQR() {
         <div class="qr-connected-sub">WhatsApp linked successfully</div>
       </div>`;
       statusEl.textContent = '';
-      setTimeout(() => { closeQRModal(); pollWAStatus(); toast('WhatsApp connected!', 'success'); }, 1800);
+      // update availability and close
+      if (_qrMode === 'local') waAvailability.local = true;
+      else waAvailability.render = true;
+      setTimeout(() => {
+        closeQRModal();
+        pollWAStatus();
+        toast('WhatsApp connected!', 'success');
+      }, 1800);
     } else if (d.qr) {
-      if (qrFallbackTimer) { clearTimeout(qrFallbackTimer); qrFallbackTimer = null; }
       if (d.qr !== lastQRData) {
         lastQRData = d.qr;
         wrap.innerHTML = '';
@@ -1392,16 +1448,19 @@ async function fetchQR() {
       statusEl.textContent = 'Scan with your WhatsApp app';
     } else {
       if (!lastQRData) {
-        wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;"><div class="spinner" style="margin:0 auto 12px;"></div>Waiting for QR code...<br><small style="margin-top:6px;display:block;">Make sure the WhatsApp bridge is running</small></div>';
+        const hint = _qrMode === 'local'
+          ? 'Start the local bridge: <code>node whatsapp/index.js</code>'
+          : 'Render bridge may be cold-starting (30-60s)…';
+        wrap.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;"><div class="spinner" style="margin:0 auto 12px;"></div>Waiting for QR…<br><small style="margin-top:8px;display:block;line-height:1.6;">${hint}</small></div>`;
       }
-      statusEl.textContent = 'Starting WhatsApp bridge...';
+      statusEl.textContent = 'Starting bridge…';
     }
   } catch(e) {
     if (!lastQRData) {
-      const msg = waLocalMode ? 'Make sure the local WhatsApp bridge is running on port 3001.' : 'Bridge service may be starting up — retrying.';
-      wrap.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:13px;">📱 WhatsApp bridge offline<br><small style="margin-top:8px;display:block;line-height:1.6;">${msg}</small></div>`;
+      const hint = _qrMode === 'local' ? 'localhost:3001 not reachable. Run the local bridge.' : 'Render bridge offline.';
+      wrap.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">📵 Bridge offline<br><small style="margin-top:8px;display:block;line-height:1.6;">${hint}</small></div>`;
     }
-    statusEl.textContent = waLocalMode ? 'Local bridge offline (port 3001)' : 'Bridge offline — retrying…';
+    statusEl.textContent = _qrMode === 'local' ? 'localhost:3001 offline' : 'Render bridge offline';
   }
 }
 
@@ -1616,7 +1675,7 @@ async function openLeadPanel(leadId) {
     currentLeadPhone = lead.phone;
 
     document.getElementById('panel-lead-name').textContent = lead.name;
-    document.getElementById('panel-lead-phone').textContent = lead.phone;
+    document.getElementById('panel-lead-phone').textContent = fmtPhone(lead.phone);
     document.getElementById('panel-source').textContent = lead.source;
     document.getElementById('panel-score').textContent = lead.ai_score ? `${lead.ai_score}/100` : 'Not scored';
     document.getElementById('panel-created').textContent = fmtDate(lead.created_at) || '—';
@@ -1766,36 +1825,49 @@ async function sendPanelMessage() {
   const msg = document.getElementById('panel-message').value.trim();
   if (!msg) { toast('Message cannot be empty', 'error'); return; }
   const btn = document.getElementById('btn-send-msg');
-  btn.disabled = true; btn.innerHTML = '📤 Sending...';
-  try {
-    if (waLocalMode) {
-      // In local mode: send directly to local bridge
+  btn.disabled = true; btn.innerHTML = '⏳';
+
+  const _send = async (mode) => {
+    if (mode === 'local') {
       const lead = await apiFetch(`${API}/api/leads/${currentLeadId}`);
-      const phone = lead.phone;
-      const r = await fetch('http://localhost:3001/send', {
+      const r = await fetch(`${LOCAL_BRIDGE_URL}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, message: msg }),
+        body: JSON.stringify({ phone: lead.phone, message: msg }),
       });
       const d = await r.json();
-      if (!d.success) throw new Error(d.error || 'Local bridge send failed');
-      // Save outbound to backend
+      if (!d.success) throw new Error(d.error || 'Local bridge failed');
+      // Save to backend
       await apiFetch(`${API}/api/messages/save-outbound`, {
-        method: 'POST',
-        body: JSON.stringify({ phone, message: msg }),
+        method: 'POST', body: JSON.stringify({ phone: lead.phone, message: msg }),
       }).catch(() => {});
     } else {
+      // meta or render → backend handles it
       await apiFetch(`${API}/api/leads/${currentLeadId}/send-message`, {
-        method: 'POST',
-        body: JSON.stringify({ message: msg }),
+        method: 'POST', body: JSON.stringify({ message: msg }),
       });
     }
-    toast('Message sent ✓', 'success');
-    const _msgTa = document.getElementById('panel-message');
-    _msgTa.value = ''; _msgTa.style.height = 'auto';
-    // Refresh chat
-    openLeadPanel(currentLeadId);
+  };
+
+  try {
+    await _send(activeWAMode);
+    toast('✓ Message sent', 'success');
+    document.getElementById('panel-message').value = '';
+    document.getElementById('panel-message').style.height = 'auto';
+    openLeadPanel(currentLeadId); // refresh chat
   } catch(e) {
+    // Auto-fallback: if Meta failed and local is up, try local
+    if (activeWAMode === 'meta' && waAvailability.local) {
+      try {
+        toast('Meta failed — trying local bridge…', 'info');
+        await _send('local');
+        toast('✓ Sent via local bridge', 'success');
+        document.getElementById('panel-message').value = '';
+        document.getElementById('panel-message').style.height = 'auto';
+        openLeadPanel(currentLeadId);
+        return;
+      } catch(e2) { /* fall through */ }
+    }
     toast(`Send failed: ${e.message}`, 'error');
   } finally {
     btn.disabled = false; btn.innerHTML = '➤';
@@ -1982,6 +2054,15 @@ async function downloadCSV() {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+function fmtPhone(raw) {
+  if (!raw) return '—';
+  const s = String(raw).replace(/\D/g, '');
+  if (s.length === 12 && s.startsWith('91')) return `+91 ${s.slice(2,7)} ${s.slice(7)}`;
+  if (s.length === 11 && s.startsWith('1'))  return `+1 (${s.slice(1,4)}) ${s.slice(4,7)}-${s.slice(7)}`;
+  if (s.length > 10) return `+${s}`;
+  return s;
+}
+
 function q(v) { if (v == null) return ''; return `"${String(v).replace(/"/g, '""')}"`; }
 
 function esc(str) {
@@ -2042,32 +2123,27 @@ document.addEventListener('keydown', e => {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('wa-connect-btn').onclick = openQRModal;
-
   // Verify token is still valid
   apiFetch(`${API}/api/auth/me`).then(user => {
     document.getElementById('nav-username').textContent = user.username;
     localStorage.setItem('lf_username', user.username);
   }).catch(() => {
-    // Token invalid — redirect to login
     localStorage.removeItem('lf_token');
     window.location.href = '/login.html';
   });
 
   loadDashboard();
   dashboardInterval = setInterval(loadDashboard, 60000);
-  pollWAStatus();
-  setInterval(pollWAStatus, 10000);
-  connectWebSocket();
-  // Keep Render services warm — ping every 4 min to prevent 15-min spin-down
-  setInterval(() => {
-    fetch(`${API}/api/health`).catch(() => {});
-    if (!waLocalMode) fetch('/api/whatsapp/status').catch(() => {});
-  }, 240000);
 
-  // Keep Render warm — ping every 4 min
+  // Check all WA modes on load, then re-check every 30s silently
+  checkAllWAModes();
+  setInterval(pollWAStatus, 30000);
+
+  connectWebSocket();
+
+  // Keep Render backend warm — ping every 4 min
   setInterval(() => {
-    fetch(`${API}/api/health`, { headers: { 'Authorization': `Bearer ${jwtToken}` } }).catch(() => {});
+    fetch(`${API}/health`, { headers: { 'Authorization': `Bearer ${jwtToken}` } }).catch(() => {});
   }, 240000);
 
   document.getElementById('add-lead-modal').addEventListener('click', e => {

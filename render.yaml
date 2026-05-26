@@ -20,10 +20,15 @@ services:
         sync: false        # Same value as in WhatsApp bridge service
       - key: WHATSAPP_OWNER_USER_ID
         value: "1"         # User ID that receives WhatsApp inbound leads
-      - key: WA_SERVER_URL
-        sync: false        # Set to WhatsApp bridge URL after first deploy
       - key: WA_MANAGER_PHONE
         value: "917087603933"
+      # ── Meta WhatsApp Cloud API ──────────────────────────────────
+      - key: WA_PHONE_NUMBER_ID
+        sync: false        # e.g. 1117785374756659 — from Meta Developer Console
+      - key: WA_ACCESS_TOKEN
+        sync: false        # Permanent token from Meta Developer Console
+      - key: WA_WEBHOOK_VERIFY_TOKEN
+        value: "leadflow-webhook-verify-2024"
 
   # ── WhatsApp Bridge ──────────────────────────────────────────
   - type: web

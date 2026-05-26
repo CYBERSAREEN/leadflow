@@ -1,7 +1,7 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -143,6 +143,93 @@ async def whatsapp_qr():
 @app.post("/api/whatsapp/disconnect")
 async def whatsapp_disconnect():
     return await whatsapp_bridge.disconnect()
+
+
+# ── Meta Cloud API Webhook ─────────────────────────────────────────────────
+@app.get("/api/whatsapp/webhook")
+async def whatsapp_webhook_verify(request: Request):
+    """
+    Meta calls this GET to verify the webhook URL.
+    Set WA_WEBHOOK_VERIFY_TOKEN in .env and paste the same string in
+    Meta Developer Console → App → WhatsApp → Configuration → Webhook.
+    """
+    params = dict(request.query_params)
+    mode       = params.get("hub.mode")
+    token      = params.get("hub.verify_token")
+    challenge  = params.get("hub.challenge")
+    verify_tok = os.environ.get("WA_WEBHOOK_VERIFY_TOKEN", "leadflow-webhook-verify-2024")
+
+    if mode == "subscribe" and token == verify_tok:
+        logger.info("WhatsApp webhook verified ✓")
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(content=challenge, status_code=200)
+    logger.warning(f"Webhook verify failed — mode={mode} token={token}")
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
+@app.post("/api/whatsapp/webhook")
+async def whatsapp_webhook_receive(request: Request):
+    """
+    Meta posts inbound messages here.
+    Each message is stored in DB and broadcast via WebSocket (same as the old Baileys flow).
+    """
+    try:
+        body = await request.json()
+        logger.debug(f"WA webhook payload: {body}")
+
+        from backend.main_state import broadcast_message
+        from backend import database
+
+        entries = body.get("entry", [])
+        for entry in entries:
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                messages_list = value.get("messages", [])
+                contacts = value.get("contacts", [])
+                contact_map = {c["wa_id"]: c.get("profile", {}).get("name") for c in contacts}
+
+                for msg in messages_list:
+                    if msg.get("type") != "text":
+                        continue  # skip non-text (images, stickers, etc.) for now
+
+                    phone     = msg.get("from", "")          # e.g. "917087603933"
+                    wa_msg_id = msg.get("id")
+                    text_body = msg.get("text", {}).get("body", "")
+                    notify    = contact_map.get(phone)
+
+                    # Upsert lead
+                    lead = database.get_lead_by_phone(phone)
+                    if not lead:
+                        name = notify or f"WA {phone[-4:]}"
+                        lead = database.create_lead(
+                            name=name, phone=phone, source="whatsapp",
+                            user_id=int(os.environ.get("WHATSAPP_OWNER_USER_ID", "1")),
+                        )
+                        if not lead:
+                            lead = database.get_lead_by_phone(phone)
+                    else:
+                        current_name = lead.get("name", "")
+                        if notify and (current_name.startswith("WA ") or current_name == phone):
+                            database.update_lead(lead["id"], name=notify)
+                            lead = database.get_lead_by_id(lead["id"])
+
+                    if lead and text_body:
+                        saved_msg = database.save_message(
+                            phone=phone, direction="inbound",
+                            body=text_body, wa_message_id=wa_msg_id,
+                        )
+                        if saved_msg:
+                            await broadcast_message({
+                                "type": "new_message",
+                                "message": saved_msg,
+                                "lead_id": lead["id"],
+                                "lead_name": lead.get("name", phone),
+                            })
+
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Webhook receive error: {e}")
+        return {"status": "error", "detail": str(e)}
 
 
 @app.websocket("/ws")
